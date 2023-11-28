@@ -57,6 +57,11 @@ func GenerateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExpr
 	cellArr, cellArrLen := ToArraySexp(cellContent)
 
 	switch label.(reader.Symbol).GetValue() {
+	case "quote":
+		if cellArrLen != 1 {
+			panic("Invalid Syntax Quote")
+		}
+		return []reader.SExpression{reader.NewSymbol(fmt.Sprintf("load-cell %s", cellArr[0]))}, 1
 	case "loop":
 		if 2 != cellArrLen {
 			panic("Invalid syntax 2")
@@ -211,6 +216,59 @@ func GenerateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExpr
 		opCodes = append(opCodes, reader.NewSymbol(fmt.Sprintf("define %s", symbol.(reader.Symbol).GetValue())))
 
 		return opCodes, affectedCode + 1
+
+	case "lambda":
+		if 2 != cellArrLen {
+			panic("Invalid syntax 5")
+		}
+
+		opCode := []reader.SExpression{reader.NewSymbol("new-env")}
+		opCodeLine := nowStartLine + 1
+
+		//((a 10) (b 20))
+		rawVarNameAndInitVals := cellArr[0]
+
+		//(a 10)[]
+		varNameAndInitVals, varNameAndInitValsLen := ToArraySexp(rawVarNameAndInitVals)
+
+		for i := int64(0); i < varNameAndInitValsLen; i++ {
+			if reader.SExpressionTypeConsCell != varNameAndInitVals[i].SExpressionTypeId() {
+				panic("Invalid syntax 6")
+			}
+			nameAndInitVals, size := ToArraySexp(varNameAndInitVals[i])
+			if 0 == size || size > 2 {
+				panic("Invalid syntax 7")
+			}
+			if size == 2 {
+				initValOpCode, initValOpCodeLen := GenerateOpCode(nameAndInitVals[1], opCodeLine)
+				opCode = append(opCode, initValOpCode...)
+				opCodeLine += initValOpCodeLen
+			} else {
+				opCode = append(opCode, reader.NewSymbol("load-cell ()"))
+				opCodeLine += 1
+			}
+			if nameAndInitVals[0].SExpressionTypeId() != reader.SExpressionTypeSymbol {
+				panic("Invalid syntax 8")
+			}
+			opCode = append(opCode, reader.NewSymbol(fmt.Sprintf("define %s", nameAndInitVals[0].(reader.Symbol).GetValue())))
+			opCodeLine += 1
+		}
+
+		rawBody := cellArr[1]
+
+		opCode = append(opCode, reader.NewSymbol("create-func-dummy arg-len this-stack-opcode func-opcode-size"))
+		createFuncOpCodeLine := opCodeLine
+		opCodeLine += 1
+
+		funcOpCode, funcOpCodeAffectLow := GenerateOpCode(rawBody, opCodeLine)
+		opCode = append(opCode, funcOpCode...)
+		opCodeLine += funcOpCodeAffectLow
+
+		opCode[createFuncOpCodeLine] = reader.NewSymbol(fmt.Sprintf("create-func %d %d", varNameAndInitValsLen, funcOpCodeAffectLow+1))
+
+		opCode = append(opCode, reader.NewSymbol("ret"))
+
+		return opCode, opCodeLine - nowStartLine + 1 //+1 is return instr count
 	}
 
 	var carOpCode []reader.SExpression
@@ -233,5 +291,5 @@ func GenerateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExpr
 	carOpCode, carAffectedCode := GenerateOpCode(cell.GetCar(), affectedCdrOpeCodeRowCount)
 
 	cdrAffectedCode := affectedCdrOpeCodeRowCount - nowStartLine
-	return append(append(cdrOpCode, carOpCode...), reader.NewSymbol("call")), carAffectedCode + cdrAffectedCode + 1
+	return append(append(cdrOpCode, carOpCode...), reader.NewSymbol(fmt.Sprintf("call %d", argsLen))), carAffectedCode + cdrAffectedCode + 1
 }
