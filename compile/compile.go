@@ -54,11 +54,11 @@ func GenerateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExpr
 	}
 
 	cellContent := cell.GetCdr().(reader.ConsCell)
-	cellArr, _ := ToArraySexp(cellContent)
+	cellArr, cellArrLen := ToArraySexp(cellContent)
 
 	switch label.(reader.Symbol).GetValue() {
 	case "loop":
-		if 2 != len(cellArr) {
+		if 2 != cellArrLen {
 			panic("Invalid syntax 2")
 		}
 		// cond-opcode(?)|jump-(1)|loop-body-opcode(?)|jump-lable(1)
@@ -193,7 +193,22 @@ func GenerateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExpr
 		if 2 != len(cellArr) {
 			panic("Invalid syntax 4")
 		}
-		// set-opcode(?)|jump-(1)
+	// set-opcode(?)|jump-(1)
+
+	case "define":
+		if 2 != cellArrLen {
+			panic("Invalid syntax 4")
+		}
+		symbol := cellArr[0]
+		value := cellArr[1]
+
+		opCodes := []reader.SExpression{}
+
+		if symbol.SExpressionTypeId() != reader.SExpressionTypeSymbol {
+			panic("Invalid syntax 4")
+		}
+
+		opCodes = append(opCodes, reader.NewSymbol(fmt.Sprintf("push-sym %s", symbol.(reader.Symbol).GetValue())))
 	}
 
 	var carOpCode []reader.SExpression
