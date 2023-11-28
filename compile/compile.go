@@ -210,7 +210,7 @@ func GenerateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExpr
 
 		opCodes = append(opCodes, reader.NewSymbol(fmt.Sprintf("define %s", symbol.(reader.Symbol).GetValue())))
 
-		return opCodes, affectedCode
+		return opCodes, affectedCode + 1
 	}
 
 	var carOpCode []reader.SExpression
