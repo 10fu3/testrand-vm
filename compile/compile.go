@@ -202,13 +202,15 @@ func GenerateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExpr
 		symbol := cellArr[0]
 		value := cellArr[1]
 
-		opCodes := []reader.SExpression{}
+		opCodes, affectedCode := GenerateOpCode(value, nowStartLine)
 
 		if symbol.SExpressionTypeId() != reader.SExpressionTypeSymbol {
 			panic("Invalid syntax 4")
 		}
 
-		opCodes = append(opCodes, reader.NewSymbol(fmt.Sprintf("push-sym %s", symbol.(reader.Symbol).GetValue())))
+		opCodes = append(opCodes, reader.NewSymbol(fmt.Sprintf("define %s", symbol.(reader.Symbol).GetValue())))
+
+		return opCodes, affectedCode
 	}
 
 	var carOpCode []reader.SExpression
@@ -218,8 +220,18 @@ func GenerateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExpr
 		carOpCode, carAffectedCode = GenerateOpCode(cell.GetCar(), nowStartLine)
 		return carOpCode, carAffectedCode
 	}
-	cdrOpCode, cdrAffectedCode := GenerateOpCode(cell.GetCdr(), nowStartLine)
-	carOpCode, carAffectedCode := GenerateOpCode(cell.GetCar(), nowStartLine+cdrAffectedCode)
 
+	args, argsLen := ToArraySexp(cell.GetCdr())
+	var cdrOpCode []reader.SExpression
+	affectedCdrOpeCodeRowCount := nowStartLine
+	for i := int64(0); i < argsLen; i++ {
+		argsOpCode, argsOpCodeAffectedRowCount := GenerateOpCode(args[i], affectedCdrOpeCodeRowCount)
+		cdrOpCode = append(cdrOpCode, argsOpCode...)
+		affectedCdrOpeCodeRowCount += argsOpCodeAffectedRowCount
+	}
+
+	carOpCode, carAffectedCode := GenerateOpCode(cell.GetCar(), affectedCdrOpeCodeRowCount)
+
+	cdrAffectedCode := affectedCdrOpeCodeRowCount - nowStartLine
 	return append(append(cdrOpCode, carOpCode...), reader.NewSymbol("call")), carAffectedCode + cdrAffectedCode + 1
 }
