@@ -28,7 +28,7 @@ func IsNativeFunc(sexp reader.SExpression) bool {
 		return false
 	}
 	switch sexp.(reader.Symbol).GetValue() {
-	case "+", "-", "*", "/", "%", ">", "<", ">=", "<=", "=", "and", "or", "not", "eq?", "println", "print":
+	case "+", "-", "*", "/", "%", ">", "<", ">=", "<=", "=", "and", "or", "not", "eq?", "println", "print", "car", "cdr":
 		return true
 	}
 	return false
@@ -64,9 +64,10 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExp
 		if reader.IsEmptyList(cell.GetCdr()) {
 			return carOpCode, carAffectedCode
 		}
-		cdrOpCode, cdrAffectedCode := _generateOpCode(cell.GetCdr(), nowStartLine+carAffectedCode)
 
-		return append(cdrOpCode, carOpCode...), carAffectedCode + cdrAffectedCode
+		_, argsLen := ToArraySexp(cell.GetCdr())
+		cdrOpCode, cdrAffectedCode := _generateOpCode(cell.GetCdr(), nowStartLine+carAffectedCode)
+		return append(append(cdrOpCode, carOpCode...), reader.NewSymbol(fmt.Sprintf("call %d", argsLen))), carAffectedCode + cdrAffectedCode + 1
 	}
 
 	cellContent := cell.GetCdr().(reader.ConsCell)
@@ -77,7 +78,7 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExp
 		if cellArrLen != 1 {
 			panic("Invalid Syntax Quote")
 		}
-		return []reader.SExpression{reader.NewSymbol(fmt.Sprintf("load-sexp %s", cellArr[0]))}, 1
+		return []reader.SExpression{reader.NewSymbol(fmt.Sprintf("load-sexp %s\n", cellArr[0]))}, 1
 	case "loop":
 		if 2 != cellArrLen {
 			panic("Invalid syntax 2")

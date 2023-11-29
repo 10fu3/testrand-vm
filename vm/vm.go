@@ -41,7 +41,8 @@ type Closure struct {
 	Pc            int64
 	Env           *Env
 	Cont          *Closure
-	ContPc        int64
+	ReturnCont    *Closure
+	ReturnPc      int64
 	TemporaryArgs []reader.Symbol
 }
 
@@ -113,10 +114,27 @@ func VMRun(vm *Closure) {
 
 			selfVm.Pc = jumpTo
 		case "load":
-
 			sym := selfVm.Pop().(reader.Symbol)
-			selfVm.Push(*selfVm.Env.Frame[sym.GetValue()])
-			selfVm.Pc++
+
+			meVm := selfVm
+			found := false
+			for {
+				if meVm.Env.Frame[sym.GetValue()] != nil {
+					found = true
+					break
+				}
+				if meVm.Cont == nil {
+					break
+				}
+				meVm = meVm.Cont
+			}
+			if found {
+				selfVm.Push(*meVm.Env.Frame[sym.GetValue()])
+				selfVm.Pc++
+			} else {
+				fmt.Println("Symbol not found: " + sym.GetValue())
+				selfVm.Pc++
+			}
 		case "define":
 			sym := reader.NewSymbol(opCodeAndArgs[1])
 			val := selfVm.Pop()
@@ -188,18 +206,27 @@ func VMRun(vm *Closure) {
 		case "call":
 			nextVm := selfVm.Pop().(*Closure)
 			env := nextVm.Env
+
+			argsSize, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
+
+			if argsSize != int64(len(nextVm.TemporaryArgs)) {
+				fmt.Println("args size not match")
+				goto ESCAPE
+			}
+
 			for _, sym := range nextVm.TemporaryArgs {
 				val := selfVm.Pop()
 				env.Frame[sym.GetValue()] = &val
 			}
 			nextVm.Env = env
-			nextVm.ContPc = selfVm.Pc
+			nextVm.ReturnCont = selfVm
+			nextVm.ReturnPc = selfVm.Pc
 			selfVm = nextVm
 		case "ret":
 			val := selfVm.Pop()
-			retPc := selfVm.ContPc
+			retPc := selfVm.ReturnPc
 			selfVm.Pc = 0
-			selfVm = selfVm.Cont
+			selfVm = selfVm.ReturnCont
 			selfVm.Pc = retPc
 			selfVm.Push(val)
 			selfVm.Pc++
@@ -380,17 +407,31 @@ func VMRun(vm *Closure) {
 					selfVm.Push(reader.NewBool(false))
 				}
 				selfVm.Pc++
+			case "car":
+				target := selfVm.Pop()
+				if target.SExpressionTypeId() != reader.SExpressionTypeConsCell {
+					fmt.Println("car target is not cons cell")
+				}
+				selfVm.Push(target.(reader.ConsCell).GetCar())
+				selfVm.Pc++
+			case "cdr":
+				target := selfVm.Pop()
+				if target.SExpressionTypeId() != reader.SExpressionTypeConsCell {
+					fmt.Println("cdr target is not cons cell")
+				}
+				selfVm.Push(target.(reader.ConsCell).GetCdr())
+				selfVm.Pc++
 			}
 		case "end-code":
 			fmt.Println(selfVm.Pop())
-			selfVm.Stack = []reader.SExpression{}
-			selfVm.Code = []reader.SExpression{}
-			selfVm.Pc = 0
 			goto ESCAPE
 		}
 	}
 ESCAPE:
 	{
+		selfVm.Stack = []reader.SExpression{}
+		selfVm.Code = []reader.SExpression{}
+		selfVm.Pc = 0
 	}
 }
 
