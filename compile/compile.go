@@ -198,8 +198,18 @@ func GenerateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExpr
 		if 2 != len(cellArr) {
 			panic("Invalid syntax 4")
 		}
-	// set-opcode(?)|jump-(1)
+		symbol := cellArr[0]
+		value := cellArr[1]
 
+		opCodes, affectedCode := GenerateOpCode(value, nowStartLine)
+
+		if symbol.SExpressionTypeId() != reader.SExpressionTypeSymbol {
+			panic("Invalid syntax 4")
+		}
+
+		opCodes = append(opCodes, reader.NewSymbol(fmt.Sprintf("set %s", symbol.(reader.Symbol).GetValue())))
+
+		return opCodes, affectedCode + 1
 	case "define":
 		if 2 != cellArrLen {
 			panic("Invalid syntax 4")
@@ -244,7 +254,7 @@ func GenerateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExpr
 				opCode = append(opCode, initValOpCode...)
 				opCodeLine += initValOpCodeLen
 			} else {
-				opCode = append(opCode, reader.NewSymbol("load-cell ()"))
+				opCode = append(opCode, reader.NewSymbol("load-sexp ()"))
 				opCodeLine += 1
 			}
 			if nameAndInitVals[0].SExpressionTypeId() != reader.SExpressionTypeSymbol {
@@ -256,7 +266,7 @@ func GenerateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExpr
 
 		rawBody := cellArr[1]
 
-		opCode = append(opCode, reader.NewSymbol("create-func-dummy arg-len this-stack-opcode func-opcode-size"))
+		opCode = append(opCode, reader.NewSymbol("create-lambda-dummy arg-len this-stack-opcode func-opcode-size"))
 		createFuncOpCodeLine := opCodeLine
 		opCodeLine += 1
 
@@ -264,7 +274,7 @@ func GenerateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExpr
 		opCode = append(opCode, funcOpCode...)
 		opCodeLine += funcOpCodeAffectLow
 
-		opCode[createFuncOpCodeLine] = reader.NewSymbol(fmt.Sprintf("create-func %d %d", varNameAndInitValsLen, funcOpCodeAffectLow+1))
+		opCode[createFuncOpCodeLine] = reader.NewSymbol(fmt.Sprintf("create-lambda %d", funcOpCodeAffectLow+1))
 
 		opCode = append(opCode, reader.NewSymbol("ret"))
 

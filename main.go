@@ -2,25 +2,31 @@ package main
 
 import (
 	"bufio"
-	"fmt"
 	"os"
 	"testrand-vm/compile"
 	eval "testrand-vm/reader"
+	"testrand-vm/vm"
 )
 
 func main() {
 	stdin := bufio.NewReader(os.Stdin)
 	read := eval.NewReader(stdin)
 
+	nowLine := int64(0)
+
 	for {
 		sexp, err := read.Read()
 		if err != nil {
 			break
 		}
-		stack, lows := compile.GenerateOpCode(sexp, 0)
+		stack, rows := compile.GenerateOpCode(sexp, nowLine)
 
-		for i := 0; i < len(stack); i++ {
-			fmt.Println(i, lows, stack[i].String())
-		}
+		nowLine += rows
+
+		machine := vm.NewVM()
+
+		machine.SetCode(stack)
+
+		vm.VMRun(machine)
 	}
 }

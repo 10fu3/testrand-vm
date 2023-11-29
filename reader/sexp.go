@@ -403,4 +403,5 @@ const (
 	SExpressionTypeNativeHashmap
 	SExpressionTypeNativeArray
 	SExpressionTypeEnvironment
+	SExpressionTypeVM
 )
