@@ -11,7 +11,7 @@ import (
 )
 
 type Env struct {
-	Frame map[string]reader.SExpression
+	Frame map[string]*reader.SExpression
 }
 
 func (e *Env) TypeId() string {
@@ -70,7 +70,7 @@ func NewVM() *VM {
 	return &VM{
 		Stack: make([]reader.SExpression, 0),
 		Pc:    0,
-		Env:   &Env{Frame: make(map[string]reader.SExpression)},
+		Env:   &Env{Frame: make(map[string]*reader.SExpression)},
 		Cont:  nil,
 		Mutex: &sync.RWMutex{},
 	}
@@ -115,11 +115,12 @@ func VMRun(vm *VM) {
 		case "load":
 
 			sym := selfVm.Pop().(reader.Symbol)
-			selfVm.Push(selfVm.Env.Frame[sym.GetValue()])
+			selfVm.Push(*selfVm.Env.Frame[sym.GetValue()])
 			selfVm.Pc++
 		case "define":
 			sym := reader.NewSymbol(opCodeAndArgs[1])
-			selfVm.Env.Frame[opCodeAndArgs[1]] = selfVm.Pop()
+			val := selfVm.Pop()
+			selfVm.Env.Frame[opCodeAndArgs[1]] = &val
 			selfVm.Push(sym)
 			selfVm.Pc++
 		case "define-args":
@@ -150,12 +151,13 @@ func VMRun(vm *VM) {
 			}
 
 			thisVm.Mutex.Lock()
-			thisVm.Env.Frame[sym.GetValue()] = selfVm.Pop()
+			val := selfVm.Pop()
+			thisVm.Env.Frame[sym.GetValue()] = &val
 			thisVm.Mutex.Unlock()
 			selfVm.Pc++
 		case "new-env":
 			env := &Env{
-				Frame: make(map[string]reader.SExpression),
+				Frame: make(map[string]*reader.SExpression),
 			}
 			selfVm.Push(env)
 			selfVm.Pc++
@@ -181,16 +183,17 @@ func VMRun(vm *VM) {
 			newVm.Cont = selfVm
 			newVm.Env = selfVm.Pop().(*Env)
 			newVm.Pc = 0
-			newVm.ContPc = selfVm.Pc + 1
 			selfVm.Push(newVm)
 			selfVm.Pc++
 		case "call":
 			nextVm := selfVm.Pop().(*VM)
 			env := nextVm.Env
 			for _, sym := range nextVm.TemporaryArgs {
-				env.Frame[sym.GetValue()] = selfVm.Pop()
+				val := selfVm.Pop()
+				env.Frame[sym.GetValue()] = &val
 			}
 			nextVm.Env = env
+			nextVm.ContPc = selfVm.Pc
 			selfVm = nextVm
 		case "ret":
 			val := selfVm.Pop()
@@ -381,7 +384,8 @@ func VMRun(vm *VM) {
 		case "end-code":
 			fmt.Println(selfVm.Pop())
 			selfVm.Stack = []reader.SExpression{}
-			selfVm.Pc++
+			selfVm.Code = []reader.SExpression{}
+			selfVm.Pc = 0
 			goto ESCAPE
 		}
 	}
