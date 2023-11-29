@@ -12,20 +12,16 @@ func main() {
 	stdin := bufio.NewReader(os.Stdin)
 	read := eval.NewReader(stdin)
 
-	nowLine := int64(0)
+	machine := vm.NewVM()
 
 	for {
 		sexp, err := read.Read()
 		if err != nil {
 			break
 		}
-		stack, rows := compile.GenerateOpCode(sexp, nowLine)
+		stack, _ := compile.GenerateOpCode(sexp, 0)
 
-		nowLine += rows
-
-		machine := vm.NewVM()
-
-		machine.SetCode(stack)
+		machine.AddCode(stack)
 
 		vm.VMRun(machine)
 	}

@@ -3,6 +3,7 @@ package vm
 import (
 	"bufio"
 	"fmt"
+	"github.com/google/uuid"
 	"strconv"
 	"strings"
 	"sync"
@@ -74,70 +75,65 @@ func NewVM() *VM {
 }
 
 func VMRun(vm *VM) {
-	for {
-		if vm.Pc >= int64(len(vm.Code)) {
-			break
-		}
 
-		rawCode := vm.Code[vm.Pc].(reader.Symbol).GetValue()
+	selfVm := vm
+
+	for {
+
+		rawCode := selfVm.Code[selfVm.Pc].(reader.Symbol).GetValue()
 		var opCodeAndArgs = strings.SplitN(rawCode, " ", 2)
 
 		switch opCodeAndArgs[0] {
 		case "push-sym":
-			vm.Mutex.Lock()
-			vm.Push(reader.NewSymbol(opCodeAndArgs[1]))
-			vm.Mutex.Unlock()
+			selfVm.Push(reader.NewSymbol(opCodeAndArgs[1]))
+			selfVm.Pc++
+
 		case "push-num":
 			convertedStrInt64, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
-			vm.Mutex.Lock()
-			vm.Push(reader.NewInt(convertedStrInt64))
-			vm.Mutex.Unlock()
+
+			selfVm.Push(reader.NewInt(convertedStrInt64))
+			selfVm.Pc++
 		case "push-boo":
 			convertedStrBool, _ := strconv.ParseBool(opCodeAndArgs[1])
-			vm.Mutex.Lock()
-			vm.Push(reader.NewBool(convertedStrBool))
-			vm.Mutex.Unlock()
+
+			selfVm.Push(reader.NewBool(convertedStrBool))
+			selfVm.Pc++
 		case "push-str":
-			vm.Mutex.Lock()
-			vm.Push(reader.NewString(opCodeAndArgs[1]))
-			vm.Mutex.Unlock()
+
+			selfVm.Push(reader.NewString(opCodeAndArgs[1]))
+			selfVm.Pc++
 		case "pop":
-			vm.Mutex.Lock()
-			vm.Pop()
-			vm.Mutex.Unlock()
+
+			selfVm.Pop()
+			selfVm.Pc++
 		case "jump":
 			jumpTo, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
-			vm.Mutex.Lock()
-			vm.Pc = jumpTo - 1
-			vm.Mutex.Unlock()
+
+			selfVm.Pc = jumpTo
 		case "load":
-			vm.Mutex.Lock()
-			sym := vm.Pop().(reader.Symbol)
-			vm.Push(vm.Env.Frame[sym.GetValue()])
-			vm.Mutex.Unlock()
+
+			sym := selfVm.Pop().(reader.Symbol)
+			selfVm.Push(selfVm.Env.Frame[sym.GetValue()])
+			selfVm.Pc++
 		case "define":
-			vm.Mutex.Lock()
-			sym := vm.Pop().(reader.Symbol)
-			vm.Env.Frame[sym.GetValue()] = vm.Pop()
-			vm.Mutex.Unlock()
+
+			sym := reader.NewSymbol(opCodeAndArgs[1])
+			selfVm.Env.Frame[opCodeAndArgs[1]] = selfVm.Pop()
+			selfVm.Push(sym)
+			selfVm.Pc++
 		case "load-sexp":
 			r := bufio.NewReader(strings.NewReader(opCodeAndArgs[1]))
 			sexp, err := reader.NewReader(r).Read()
 			if err != nil {
 				panic(err)
 			}
-			vm.Mutex.Lock()
-			vm.Push(sexp)
-			vm.Mutex.Unlock()
-		case "print":
-			vm.Mutex.Lock()
-			sexp := vm.Pop()
-			vm.Mutex.Unlock()
-			fmt.Println(sexp.String())
+
+			selfVm.Push(sexp)
+			selfVm.Pc++
 		case "set":
 			sym := reader.NewSymbol(opCodeAndArgs[1])
 
-			thisVm := vm
+			thisVm := selfVm
 			for {
 				thisVm.Mutex.RLock()
 				if thisVm.Env.Frame[sym.GetValue()] != nil {
@@ -149,42 +145,236 @@ func VMRun(vm *VM) {
 			}
 
 			thisVm.Mutex.Lock()
-			thisVm.Env.Frame[sym.GetValue()] = vm.Pop()
+			thisVm.Env.Frame[sym.GetValue()] = selfVm.Pop()
 			thisVm.Mutex.Unlock()
-
+			selfVm.Pc++
 		case "new-env":
-			vm.Mutex.Lock()
-			vm.Push(&Env{Frame: make(map[string]reader.SExpression)})
-			vm.Mutex.Lock()
+			env := &Env{
+				Frame: make(map[string]reader.SExpression),
+			}
+			//temporary
+			selfVm.Env = env
+			selfVm.Push(env)
+			selfVm.Pc++
 		case "create-lambda":
-			codeLen, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
+			argsSizeAndCodeLen := strings.SplitN(opCodeAndArgs[1], " ", 2)
+			argsSize, _ := strconv.ParseInt(argsSizeAndCodeLen[0], 10, 64)
+			codeLen, _ := strconv.ParseInt(argsSizeAndCodeLen[1], 10, 64)
 
-			pc := vm.Pc
+			pc := selfVm.Pc
 
 			newVm := NewVM()
 
 			for i := int64(1); i <= codeLen; i++ {
-				newVm.Code = append(newVm.Code, vm.Code[pc+i])
+				newVm.Code = append(newVm.Code, selfVm.Code[pc+i])
+				selfVm.Pc++
 			}
 
-			newVm.Cont = vm
-			newVm.Env = vm.Pop().(*Env)
+			for i := int64(0); i < argsSize; i++ {
+				selfVm.Pop()
+			}
+
+			newVm.Cont = selfVm
+			newVm.Env = selfVm.Pop().(*Env)
 			newVm.Pc = 0
-			vm.Mutex.Lock()
-			vm.Push(newVm)
-			vm.Mutex.Unlock()
+
+			selfVm.Push(newVm)
+			selfVm.Pc++
 		case "call":
-			vm.Mutex.Lock()
-			vm = vm.Pop().(*VM)
-			vm.Mutex.Unlock()
+			selfVm = selfVm.Pop().(*VM)
 		case "ret":
-			vm.Mutex.Lock()
-			val := vm.Pop()
-			vm = vm.Cont
-			vm.Push(val)
-			vm.Mutex.Unlock()
+			val := selfVm.Pop()
+			selfVm = selfVm.Cont
+			selfVm.Push(val)
+			selfVm.Pc++
+		case "ramdom-id":
+			id := uuid.New()
+			selfVm.Push(reader.NewString(id.String()))
+			selfVm.Pc++
+		case "call-native":
+			funcNameAndArgLen := strings.SplitN(opCodeAndArgs[1], " ", 2)
+			argLen, _ := strconv.ParseInt(funcNameAndArgLen[1], 10, 64)
+			switch funcNameAndArgLen[0] {
+			case "print":
+				line := ""
+				for i := int64(0); i < argLen; i++ {
+					line += selfVm.Pop().String()
+				}
+				fmt.Print(line)
+				selfVm.Push(reader.NewNil())
+				selfVm.Pc++
+			case "println":
+				line := ""
+				for i := int64(0); i < argLen; i++ {
+					line += selfVm.Pop().String()
+				}
+				fmt.Println(line)
+				selfVm.Push(reader.NewNil())
+				selfVm.Pc++
+			case "+":
+				sum := int64(0)
+				for i := int64(0); i < argLen; i++ {
+					sum += selfVm.Pop().(reader.Number).GetValue()
+				}
+				selfVm.Push(reader.NewInt(sum))
+				selfVm.Pc++
+			case "-":
+				sum := selfVm.Pop().(reader.Number).GetValue()
+				for i := int64(1); i < argLen; i++ {
+					sum -= selfVm.Pop().(reader.Number).GetValue()
+				}
+				selfVm.Push(reader.NewInt(sum))
+				selfVm.Pc++
+			case "*":
+				sum := int64(1)
+				for i := int64(0); i < argLen; i++ {
+					sum *= selfVm.Pop().(reader.Number).GetValue()
+				}
+				selfVm.Push(reader.NewInt(sum))
+				selfVm.Pc++
+			case "/":
+				sum := selfVm.Pop().(reader.Number).GetValue()
+				for i := int64(1); i < argLen; i++ {
+					sum /= selfVm.Pop().(reader.Number).GetValue()
+				}
+				selfVm.Push(reader.NewInt(sum))
+				selfVm.Pc++
+			case "mod":
+				sum := selfVm.Pop().(reader.Number).GetValue()
+				for i := int64(1); i < argLen; i++ {
+					sum %= selfVm.Pop().(reader.Number).GetValue()
+				}
+				selfVm.Push(reader.NewInt(sum))
+				selfVm.Pc++
+			case "=":
+				val := selfVm.Pop()
+				var tmp reader.SExpression
+				var result = true
+				for i := int64(1); i < argLen; i++ {
+					tmp = selfVm.Pop()
+					if result == false {
+						continue
+					}
+					if reader.SExpressionTypeNumber != tmp.SExpressionTypeId() {
+						fmt.Println("arg is not number")
+					}
+					if !val.Equals(tmp) {
+						result = false
+					}
+				}
+				if result {
+					selfVm.Push(reader.NewBool(true))
+				} else {
+					selfVm.Push(reader.NewBool(false))
+				}
+				selfVm.Pc++
+			case "!=":
+				val := selfVm.Pop()
+				var tmp reader.SExpression
+				var result = true
+				for i := int64(1); i < argLen; i++ {
+					tmp = selfVm.Pop()
+					if result == false {
+						continue
+					}
+					if val.Equals(tmp) {
+						result = false
+					}
+				}
+				if result {
+					selfVm.Push(reader.NewBool(true))
+				} else {
+					selfVm.Push(reader.NewBool(false))
+				}
+				selfVm.Pc++
+			case ">":
+				val := selfVm.Pop().(reader.Number).GetValue()
+				var tmp reader.SExpression
+				flag := true
+				for i := int64(1); i < argLen; i++ {
+					tmp = selfVm.Pop()
+					if flag == false {
+						continue
+					}
+					if val <= tmp.(reader.Number).GetValue() {
+						flag = false
+					}
+				}
+				if flag {
+					selfVm.Push(reader.NewBool(true))
+				} else {
+					selfVm.Push(reader.NewBool(false))
+				}
+				selfVm.Pc++
+			case "<":
+				val := selfVm.Pop().(reader.Number).GetValue()
+				var tmp reader.SExpression
+				flag := true
+				for i := int64(1); i < argLen; i++ {
+					tmp = selfVm.Pop()
+					if flag == false {
+						continue
+					}
+					if val >= tmp.(reader.Number).GetValue() {
+						flag = false
+					}
+				}
+				if flag {
+					selfVm.Push(reader.NewBool(true))
+				} else {
+					selfVm.Push(reader.NewBool(false))
+				}
+				selfVm.Pc++
+			case ">=":
+				val := selfVm.Pop().(reader.Number).GetValue()
+				var tmp reader.SExpression
+				flag := true
+				for i := int64(1); i < argLen; i++ {
+					tmp = selfVm.Pop()
+					if flag == false {
+						continue
+					}
+					if val < tmp.(reader.Number).GetValue() {
+						flag = false
+					}
+				}
+				if flag {
+					selfVm.Push(reader.NewBool(true))
+				} else {
+					selfVm.Push(reader.NewBool(false))
+				}
+				selfVm.Pc++
+
+			case "<=":
+				val := selfVm.Pop().(reader.Number).GetValue()
+				var tmp reader.SExpression
+				flag := true
+				for i := int64(1); i < argLen; i++ {
+					tmp = selfVm.Pop()
+					if flag == false {
+						continue
+					}
+					if val > tmp.(reader.Number).GetValue() {
+						flag = false
+					}
+				}
+				if flag {
+					selfVm.Push(reader.NewBool(true))
+				} else {
+					selfVm.Push(reader.NewBool(false))
+				}
+				selfVm.Pc++
+			}
+		case "end-code":
+			fmt.Println(selfVm.Pop())
+			selfVm.Pc = 0
+			selfVm.Code = []reader.SExpression{}
+			selfVm.Stack = []reader.SExpression{}
+			goto ESCAPE
 		}
-		vm.Pc++
+	}
+ESCAPE:
+	{
 	}
 }
 
@@ -228,6 +418,10 @@ func (vm *VM) GetCont() *VM {
 
 func (vm *VM) SetCode(code []reader.SExpression) {
 	vm.Code = code
+}
+
+func (vm *VM) AddCode(code []reader.SExpression) {
+	vm.Code = append(vm.Code, code...)
 }
 
 func (vm *VM) GetCode() []reader.SExpression {
