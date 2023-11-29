@@ -105,7 +105,6 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExp
 				result = append(result, reader.NewSymbol("pop"))
 			}
 		}
-		result = append(result, reader.NewSymbol("ret"))
 		return result, addedRows + 1
 	case "cond":
 		condAndBody, condAndBodySize := ToArraySexp(cellContent)
