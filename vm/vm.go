@@ -34,40 +34,40 @@ func (e *Env) Equals(sexp reader.SExpression) bool {
 	panic("implement me")
 }
 
-type VM struct {
+type Closure struct {
 	Mutex         *sync.RWMutex
 	Stack         []reader.SExpression
 	Code          []reader.SExpression
 	Pc            int64
 	Env           *Env
-	Cont          *VM
+	Cont          *Closure
 	ContPc        int64
 	TemporaryArgs []reader.Symbol
 }
 
-func (vm *VM) TypeId() string {
+func (vm *Closure) TypeId() string {
 	return "vm"
 }
 
-func (vm *VM) SExpressionTypeId() reader.SExpressionType {
+func (vm *Closure) SExpressionTypeId() reader.SExpressionType {
 	return reader.SExpressionTypeVM
 }
 
-func (vm *VM) String() string {
+func (vm *Closure) String() string {
 	return "vm"
 }
 
-func (vm *VM) IsList() bool {
+func (vm *Closure) IsList() bool {
 	return false
 }
 
-func (vm *VM) Equals(sexp reader.SExpression) bool {
+func (vm *Closure) Equals(sexp reader.SExpression) bool {
 	//TODO implement me
 	panic("implement me")
 }
 
-func NewVM() *VM {
-	return &VM{
+func NewVM() *Closure {
+	return &Closure{
 		Stack: make([]reader.SExpression, 0),
 		Pc:    0,
 		Env:   &Env{Frame: make(map[string]*reader.SExpression)},
@@ -76,7 +76,7 @@ func NewVM() *VM {
 	}
 }
 
-func VMRun(vm *VM) {
+func VMRun(vm *Closure) {
 
 	selfVm := vm
 
@@ -186,7 +186,7 @@ func VMRun(vm *VM) {
 			selfVm.Push(newVm)
 			selfVm.Pc++
 		case "call":
-			nextVm := selfVm.Pop().(*VM)
+			nextVm := selfVm.Pop().(*Closure)
 			env := nextVm.Env
 			for _, sym := range nextVm.TemporaryArgs {
 				val := selfVm.Pop()
@@ -394,11 +394,11 @@ ESCAPE:
 	}
 }
 
-func (vm *VM) Push(sexp reader.SExpression) {
+func (vm *Closure) Push(sexp reader.SExpression) {
 	vm.Stack = append(vm.Stack, sexp)
 }
 
-func (vm *VM) Pop() reader.SExpression {
+func (vm *Closure) Pop() reader.SExpression {
 	if len(vm.Stack) == 0 {
 		return nil
 	}
@@ -408,7 +408,7 @@ func (vm *VM) Pop() reader.SExpression {
 	return ret
 }
 
-func (vm *VM) Peek() reader.SExpression {
+func (vm *Closure) Peek() reader.SExpression {
 	if len(vm.Stack) == 0 {
 		return nil
 	}
@@ -416,38 +416,38 @@ func (vm *VM) Peek() reader.SExpression {
 	return vm.Stack[len(vm.Stack)-1]
 }
 
-func (vm *VM) SetEnv(env *Env) {
+func (vm *Closure) SetEnv(env *Env) {
 	vm.Env = env
 }
 
-func (vm *VM) GetEnv() *Env {
+func (vm *Closure) GetEnv() *Env {
 	return vm.Env
 }
 
-func (vm *VM) SetCont(cont *VM) {
+func (vm *Closure) SetCont(cont *Closure) {
 	vm.Cont = cont
 }
 
-func (vm *VM) GetCont() *VM {
+func (vm *Closure) GetCont() *Closure {
 	return vm.Cont
 }
 
-func (vm *VM) SetCode(code []reader.SExpression) {
+func (vm *Closure) SetCode(code []reader.SExpression) {
 	vm.Code = code
 }
 
-func (vm *VM) AddCode(code []reader.SExpression) {
+func (vm *Closure) AddCode(code []reader.SExpression) {
 	vm.Code = append(vm.Code, code...)
 }
 
-func (vm *VM) GetCode() []reader.SExpression {
+func (vm *Closure) GetCode() []reader.SExpression {
 	return vm.Code
 }
 
-func (vm *VM) SetPc(pc int64) {
+func (vm *Closure) SetPc(pc int64) {
 	vm.Pc = pc
 }
 
-func (vm *VM) GetPc() int64 {
+func (vm *Closure) GetPc() int64 {
 	return vm.Pc
 }
