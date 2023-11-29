@@ -251,32 +251,11 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExp
 		opCode := []reader.SExpression{reader.NewSymbol("new-env")}
 		opCodeLine := nowStartLine + 1
 
-		//((a 10) (b 20))
-		rawVarNameAndInitVals := cellArr[0]
+		//(a b c)
+		vars, varslen := ToArraySexp(cellArr[0])
 
-		//(a 10)[]
-		varNameAndInitVals, varNameAndInitValsLen := ToArraySexp(rawVarNameAndInitVals)
-
-		for i := int64(0); i < varNameAndInitValsLen; i++ {
-			if reader.SExpressionTypeConsCell != varNameAndInitVals[i].SExpressionTypeId() {
-				panic("Invalid syntax 6")
-			}
-			nameAndInitVals, size := ToArraySexp(varNameAndInitVals[i])
-			if 0 == size || size > 2 {
-				panic("Invalid syntax 7")
-			}
-			if size == 2 {
-				initValOpCode, initValOpCodeLen := _generateOpCode(nameAndInitVals[1], opCodeLine)
-				opCode = append(opCode, initValOpCode...)
-				opCodeLine += initValOpCodeLen
-			} else {
-				opCode = append(opCode, reader.NewSymbol("load-sexp ()"))
-				opCodeLine += 1
-			}
-			if nameAndInitVals[0].SExpressionTypeId() != reader.SExpressionTypeSymbol {
-				panic("Invalid syntax 8")
-			}
-			opCode = append(opCode, reader.NewSymbol(fmt.Sprintf("define %s", nameAndInitVals[0].(reader.Symbol).GetValue())))
+		for i := int64(0); i < varslen; i++ {
+			opCode = append(opCode, reader.NewSymbol(fmt.Sprintf("define-args %s", vars[i].(reader.Symbol).GetValue())))
 			opCodeLine += 1
 		}
 
@@ -290,7 +269,7 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExp
 		opCode = append(opCode, funcOpCode...)
 		opCodeLine += funcOpCodeAffectLow
 
-		opCode[createFuncOpCodeLine] = reader.NewSymbol(fmt.Sprintf("create-lambda %d %d", varNameAndInitValsLen, funcOpCodeAffectLow+1))
+		opCode[createFuncOpCodeLine] = reader.NewSymbol(fmt.Sprintf("create-lambda %d %d", varslen, funcOpCodeAffectLow+1))
 
 		opCode = append(opCode, reader.NewSymbol("ret"))
 

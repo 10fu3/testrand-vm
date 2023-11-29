@@ -35,12 +35,14 @@ func (e *Env) Equals(sexp reader.SExpression) bool {
 }
 
 type VM struct {
-	Mutex *sync.RWMutex
-	Stack []reader.SExpression
-	Code  []reader.SExpression
-	Pc    int64
-	Env   *Env
-	Cont  *VM
+	Mutex         *sync.RWMutex
+	Stack         []reader.SExpression
+	Code          []reader.SExpression
+	Pc            int64
+	Env           *Env
+	Cont          *VM
+	ContPc        int64
+	TemporaryArgs []reader.Symbol
 }
 
 func (vm *VM) TypeId() string {
@@ -116,9 +118,12 @@ func VMRun(vm *VM) {
 			selfVm.Push(selfVm.Env.Frame[sym.GetValue()])
 			selfVm.Pc++
 		case "define":
-
 			sym := reader.NewSymbol(opCodeAndArgs[1])
 			selfVm.Env.Frame[opCodeAndArgs[1]] = selfVm.Pop()
+			selfVm.Push(sym)
+			selfVm.Pc++
+		case "define-args":
+			sym := reader.NewSymbol(opCodeAndArgs[1])
 			selfVm.Push(sym)
 			selfVm.Pc++
 		case "load-sexp":
@@ -152,8 +157,6 @@ func VMRun(vm *VM) {
 			env := &Env{
 				Frame: make(map[string]reader.SExpression),
 			}
-			//temporary
-			selfVm.Env = env
 			selfVm.Push(env)
 			selfVm.Pc++
 		case "create-lambda":
@@ -171,20 +174,30 @@ func VMRun(vm *VM) {
 			}
 
 			for i := int64(0); i < argsSize; i++ {
-				selfVm.Pop()
+				sym := selfVm.Pop().(reader.Symbol)
+				newVm.TemporaryArgs = append(newVm.TemporaryArgs, sym)
 			}
 
 			newVm.Cont = selfVm
 			newVm.Env = selfVm.Pop().(*Env)
 			newVm.Pc = 0
-
+			newVm.ContPc = selfVm.Pc + 1
 			selfVm.Push(newVm)
 			selfVm.Pc++
 		case "call":
-			selfVm = selfVm.Pop().(*VM)
+			nextVm := selfVm.Pop().(*VM)
+			env := nextVm.Env
+			for _, sym := range nextVm.TemporaryArgs {
+				env.Frame[sym.GetValue()] = selfVm.Pop()
+			}
+			nextVm.Env = env
+			selfVm = nextVm
 		case "ret":
 			val := selfVm.Pop()
+			retPc := selfVm.ContPc
+			selfVm.Pc = 0
 			selfVm = selfVm.Cont
+			selfVm.Pc = retPc
 			selfVm.Push(val)
 			selfVm.Pc++
 		case "ramdom-id":
@@ -367,9 +380,8 @@ func VMRun(vm *VM) {
 			}
 		case "end-code":
 			fmt.Println(selfVm.Pop())
-			selfVm.Pc = 0
-			selfVm.Code = []reader.SExpression{}
 			selfVm.Stack = []reader.SExpression{}
+			selfVm.Pc++
 			goto ESCAPE
 		}
 	}

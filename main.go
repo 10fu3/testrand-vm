@@ -19,7 +19,7 @@ func main() {
 		if err != nil {
 			break
 		}
-		stack, _ := compile.GenerateOpCode(sexp, 0)
+		stack, _ := compile.GenerateOpCode(sexp, machine.Pc)
 
 		machine.AddCode(stack)
 
