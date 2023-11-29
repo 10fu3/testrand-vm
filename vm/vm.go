@@ -46,15 +46,15 @@ type Closure struct {
 }
 
 func (vm *Closure) TypeId() string {
-	return "vm"
+	return "closure"
 }
 
 func (vm *Closure) SExpressionTypeId() reader.SExpressionType {
-	return reader.SExpressionTypeVM
+	return reader.SExpressionTypeClosure
 }
 
 func (vm *Closure) String() string {
-	return "vm"
+	return "closure"
 }
 
 func (vm *Closure) IsList() bool {
