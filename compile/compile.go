@@ -143,7 +143,7 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExp
 
 			indexesIndex += condAffectedCode
 
-			opCodes[indexesIndex] = reader.NewSymbol(fmt.Sprintf("jump-else %d", nowLine+condAffectedCode+bodyAffectedCode+3))
+			opCodes[indexesIndex] = reader.NewSymbol(fmt.Sprintf("jump-else %d", nowLine+condAffectedCode+bodyAffectedCode+2))
 
 			indexesIndex += 1
 
@@ -162,7 +162,7 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExp
 		}
 
 		for i := int64(0); i < condAndBodySize; i++ {
-			opCodes[lastIndexes[i]] = reader.NewSymbol(fmt.Sprintf("jump-%d", nowLine+condAndBodySize))
+			opCodes[lastIndexes[i]] = reader.NewSymbol(fmt.Sprintf("jump %d", nowLine+condAndBodySize))
 		}
 
 		return opCodes, int64(len(opCodes))
@@ -184,10 +184,9 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExp
 			opCodes = append(opCodes, condOpCodes...)
 		}
 
-		opCodes = append(opCodes, reader.NewSymbol(fmt.Sprintf("args-len %d", condLen)))
-		opCodes = append(opCodes, reader.NewSymbol("and"))
+		opCodes = append(opCodes, reader.NewSymbol(fmt.Sprintf("and %d", condLen)))
 
-		return opCodes, affectedCode - nowStartLine + 2
+		return opCodes, affectedCode - nowStartLine + 1
 
 	case "or":
 		cond, condLen := ToArraySexp(cellContent)
@@ -206,10 +205,9 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExp
 			opCodes = append(opCodes, condOpCodes...)
 		}
 
-		opCodes = append(opCodes, reader.NewSymbol(fmt.Sprintf("args-len %d", condLen)))
-		opCodes = append(opCodes, reader.NewSymbol("or"))
+		opCodes = append(opCodes, reader.NewSymbol(fmt.Sprintf("or %d", condLen)))
 
-		return opCodes, affectedCode - nowStartLine + 2
+		return opCodes, affectedCode - nowStartLine + 1
 
 	case "set":
 		if 2 != len(cellArr) {

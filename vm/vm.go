@@ -97,9 +97,14 @@ func VMRun(vm *Closure) {
 			selfVm.Push(reader.NewInt(convertedStrInt64))
 			selfVm.Pc++
 		case "push-boo":
-			convertedStrBool, _ := strconv.ParseBool(opCodeAndArgs[1])
+			val := opCodeAndArgs[1] == "#t"
 
-			selfVm.Push(reader.NewBool(convertedStrBool))
+			if opCodeAndArgs[1] != "#f" && opCodeAndArgs[1] != "#t" {
+				fmt.Println("not a bool")
+				goto ESCAPE
+			}
+
+			selfVm.Push(reader.NewBool(val))
 			selfVm.Pc++
 		case "push-str":
 
@@ -113,6 +118,33 @@ func VMRun(vm *Closure) {
 			jumpTo, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
 
 			selfVm.Pc = jumpTo
+
+		case "jump-if":
+			jumpTo, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
+			val := selfVm.Pop()
+			if val.SExpressionTypeId() != reader.SExpressionTypeBool {
+				fmt.Println("not a bool")
+				goto ESCAPE
+			}
+			if val.(reader.Bool).GetValue() {
+				selfVm.Pc = jumpTo
+			} else {
+				selfVm.Pc++
+			}
+		case "jump-else":
+			jumpTo, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
+			val := selfVm.Pop()
+			if val.SExpressionTypeId() != reader.SExpressionTypeBool {
+				fmt.Println("not a bool")
+				goto ESCAPE
+			}
+
+			if !val.(reader.Bool).GetValue() {
+				selfVm.Pc = jumpTo
+			} else {
+				selfVm.Pc++
+			}
+
 		case "load":
 			sym := selfVm.Pop().(reader.Symbol)
 
@@ -233,6 +265,46 @@ func VMRun(vm *Closure) {
 		case "ramdom-id":
 			id := uuid.New()
 			selfVm.Push(reader.NewString(id.String()))
+			selfVm.Pc++
+		case "and":
+			argsSize, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
+			val := selfVm.Pop().(reader.Bool).GetValue()
+			var tmp reader.SExpression
+			flag := true
+			for i := int64(1); i < argsSize; i++ {
+				tmp = selfVm.Pop()
+				if flag == false {
+					continue
+				}
+				if val != tmp.(reader.Bool).GetValue() {
+					flag = false
+				}
+			}
+			if flag {
+				selfVm.Push(reader.NewBool(true))
+			} else {
+				selfVm.Push(reader.NewBool(false))
+			}
+			selfVm.Pc++
+		case "or":
+			argsSize, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
+			val := selfVm.Pop().(reader.Bool).GetValue()
+			var tmp reader.SExpression
+			flag := false
+			for i := int64(1); i < argsSize; i++ {
+				tmp = selfVm.Pop()
+				if flag == true {
+					continue
+				}
+				if val == tmp.(reader.Bool).GetValue() {
+					flag = true
+				}
+			}
+			if flag {
+				selfVm.Push(reader.NewBool(true))
+			} else {
+				selfVm.Push(reader.NewBool(false))
+			}
 			selfVm.Pc++
 		case "call-native":
 			funcNameAndArgLen := strings.SplitN(opCodeAndArgs[1], " ", 2)
