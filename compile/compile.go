@@ -61,7 +61,7 @@ func GenerateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExpr
 		if cellArrLen != 1 {
 			panic("Invalid Syntax Quote")
 		}
-		return []reader.SExpression{reader.NewSymbol(fmt.Sprintf("load-cell %s", cellArr[0]))}, 1
+		return []reader.SExpression{reader.NewSymbol(fmt.Sprintf("load-sexp %s", cellArr[0]))}, 1
 	case "loop":
 		if 2 != cellArrLen {
 			panic("Invalid syntax 2")
@@ -126,7 +126,7 @@ func GenerateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExpr
 
 			indexesIndex += condAffectedCode
 
-			opCodes[indexesIndex] = reader.NewSymbol(fmt.Sprintf("jump-else %d", nowLine+condAffectedCode+bodyAffectedCode+2))
+			opCodes[indexesIndex] = reader.NewSymbol(fmt.Sprintf("jump-else %d", nowLine+condAffectedCode+bodyAffectedCode+3))
 
 			indexesIndex += 1
 
@@ -145,7 +145,7 @@ func GenerateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExpr
 		}
 
 		for i := int64(0); i < condAndBodySize; i++ {
-			opCodes[lastIndexes[i]] = reader.NewSymbol(fmt.Sprintf("jump-%d", nowLine+int64(len(opCodes))))
+			opCodes[lastIndexes[i]] = reader.NewSymbol(fmt.Sprintf("jump-%d", nowLine+condAndBodySize))
 		}
 
 		return opCodes, int64(len(opCodes))
