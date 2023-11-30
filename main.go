@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"testrand-vm/compile"
 	eval "testrand-vm/reader"
@@ -24,5 +25,7 @@ func main() {
 		machine.AddCode(stack)
 
 		vm.VMRun(machine)
+
+		fmt.Println("pc:", machine.Pc)
 	}
 }

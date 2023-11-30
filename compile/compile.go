@@ -157,11 +157,11 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExp
 
 			indexesIndex += 1
 
-			nowLine += condAffectedCode + bodyAffectedCode + 1
+			nowLine += condAffectedCode + bodyAffectedCode + 2
 		}
 
 		for i := int64(0); i < condAndBodySize; i++ {
-			opCodes[lastIndexes[i]] = reader.NewSymbol(fmt.Sprintf("jump %d", nowLine+condAndBodySize))
+			opCodes[lastIndexes[i]] = reader.NewSymbol(fmt.Sprintf("jump %d", nowLine))
 		}
 
 		return opCodes, int64(len(opCodes))
@@ -263,7 +263,7 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExp
 		createFuncOpCodeLine := opCodeLine
 		opCodeLine += 1
 
-		funcOpCode, funcOpCodeAffectLow := _generateOpCode(rawBody, opCodeLine)
+		funcOpCode, funcOpCodeAffectLow := _generateOpCode(rawBody, 0)
 		opCode = append(opCode, funcOpCode...)
 		opCodeLine += funcOpCodeAffectLow
 

@@ -165,7 +165,7 @@ func VMRun(vm *Closure) {
 				selfVm.Pc++
 			} else {
 				fmt.Println("Symbol not found: " + sym.GetValue())
-				selfVm.Pc++
+				goto ESCAPE
 			}
 		case "define":
 			sym := reader.NewSymbol(opCodeAndArgs[1])
@@ -236,7 +236,14 @@ func VMRun(vm *Closure) {
 			selfVm.Push(newVm)
 			selfVm.Pc++
 		case "call":
-			nextVm := selfVm.Pop().(*Closure)
+			rawClosure := selfVm.Pop()
+
+			if rawClosure.SExpressionTypeId() != reader.SExpressionTypeClosure {
+				fmt.Println("not a closure")
+				goto ESCAPE
+			}
+
+			nextVm := rawClosure.(*Closure)
 			env := nextVm.Env
 
 			argsSize, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
@@ -257,6 +264,7 @@ func VMRun(vm *Closure) {
 		case "ret":
 			val := selfVm.Pop()
 			retPc := selfVm.ReturnPc
+			selfVm.Stack = []reader.SExpression{}
 			selfVm.Pc = 0
 			selfVm = selfVm.ReturnCont
 			selfVm.Pc = retPc
@@ -288,7 +296,6 @@ func VMRun(vm *Closure) {
 			selfVm.Pc++
 		case "or":
 			argsSize, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
-			val := selfVm.Pop().(reader.Bool).GetValue()
 			var tmp reader.SExpression
 			flag := false
 			for i := int64(1); i < argsSize; i++ {
@@ -296,7 +303,7 @@ func VMRun(vm *Closure) {
 				if flag == true {
 					continue
 				}
-				if val == tmp.(reader.Bool).GetValue() {
+				if tmp.(reader.Bool).GetValue() {
 					flag = true
 				}
 			}
@@ -411,7 +418,7 @@ func VMRun(vm *Closure) {
 					if flag == false {
 						continue
 					}
-					if val <= tmp.(reader.Number).GetValue() {
+					if val >= tmp.(reader.Number).GetValue() {
 						flag = false
 					}
 				}
@@ -430,7 +437,7 @@ func VMRun(vm *Closure) {
 					if flag == false {
 						continue
 					}
-					if val >= tmp.(reader.Number).GetValue() {
+					if val <= tmp.(reader.Number).GetValue() {
 						flag = false
 					}
 				}
@@ -449,7 +456,7 @@ func VMRun(vm *Closure) {
 					if flag == false {
 						continue
 					}
-					if val < tmp.(reader.Number).GetValue() {
+					if val > tmp.(reader.Number).GetValue() {
 						flag = false
 					}
 				}
@@ -469,7 +476,7 @@ func VMRun(vm *Closure) {
 					if flag == false {
 						continue
 					}
-					if val > tmp.(reader.Number).GetValue() {
+					if val < tmp.(reader.Number).GetValue() {
 						flag = false
 					}
 				}
