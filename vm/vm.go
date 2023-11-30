@@ -218,19 +218,14 @@ func VMRun(vm *Closure) {
 
 			thisVm := selfVm
 			for {
-				thisVm.Mutex.RLock()
 				if thisVm.Env.Frame[sym.GetValue()] != nil {
-					thisVm.Mutex.RUnlock()
 					break
 				}
 				thisVm = thisVm.Cont
-				thisVm.Mutex.RUnlock()
 			}
 
-			thisVm.Mutex.Lock()
 			val := selfVm.Pop()
 			thisVm.Env.Frame[sym.GetValue()] = &val
-			thisVm.Mutex.Unlock()
 			selfVm.Push(val)
 			selfVm.Pc++
 		case "new-env":
