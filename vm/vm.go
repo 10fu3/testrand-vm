@@ -337,10 +337,12 @@ func VMRun(vm *Closure) {
 				selfVm.Push(reader.NewBool(false))
 			}
 			selfVm.Pc++
-		case "call-native":
-			funcNameAndArgLen := strings.SplitN(opCodeAndArgs[1], " ", 2)
-			argLen, _ := strconv.ParseInt(funcNameAndArgLen[1], 10, 64)
-			switch funcNameAndArgLen[0] {
+		case "end-code":
+			fmt.Println(selfVm.Pop())
+			goto ESCAPE
+		default:
+			argLen, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
+			switch opCodeAndArgs[0] {
 			case "print":
 				line := ""
 				for i := int64(0); i < argLen; i++ {
@@ -524,14 +526,11 @@ func VMRun(vm *Closure) {
 				}
 				selfVm.Push(target.(reader.ConsCell).GetCdr())
 				selfVm.Pc++
-			case "ramdom-id":
+			case "random-id":
 				id := uuid.New()
 				selfVm.Push(reader.NewString(id.String()))
 				selfVm.Pc++
 			}
-		case "end-code":
-			fmt.Println(selfVm.Pop())
-			goto ESCAPE
 		}
 	}
 ESCAPE:

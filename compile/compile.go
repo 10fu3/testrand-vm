@@ -316,7 +316,7 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExp
 	var carAffectedCode int64
 
 	if IsNativeFunc(cell.GetCar()) {
-		carOpCode = []reader.SExpression{reader.NewSymbol(fmt.Sprintf("call-native %s %d", cell.GetCar(), argsLen))}
+		carOpCode = []reader.SExpression{reader.NewSymbol(fmt.Sprintf("%s %d", cell.GetCar(), argsLen))}
 		carAffectedCode = 1
 		cdrAffectedCode := affectedCdrOpeCodeRowCount - nowStartLine
 		return append(cdrOpCode, carOpCode...), carAffectedCode + cdrAffectedCode
