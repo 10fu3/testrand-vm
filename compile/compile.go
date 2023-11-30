@@ -259,7 +259,7 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExp
 
 		rawBody := cellArr[1]
 
-		opCode = append(opCode, reader.NewSymbol("create-lambda-dummy arg-len this-stack-opcode func-opcode-size"))
+		opCode = append(opCode, reader.NewSymbol("create-lambda-dummy arg-len this-stack-instr func-instr-size"))
 		createFuncOpCodeLine := opCodeLine
 		opCodeLine += 1
 
@@ -291,7 +291,7 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExp
 		dummyIndex := condAffectedCode
 		opCode = append(opCode, bodyOpCode...)
 		opCode = append(opCode, reader.NewSymbol(fmt.Sprintf("jmp %d", startIndex)))
-		opCode[dummyIndex] = reader.NewSymbol(fmt.Sprintf("jmp-else %d", nowStartLine+condAffectedCode+1+bodyAffectedCode))
+		opCode[dummyIndex] = reader.NewSymbol(fmt.Sprintf("jmp-else %d", nowStartLine+condAffectedCode+1+bodyAffectedCode+1))
 
 		return opCode, condAffectedCode + 1 + bodyAffectedCode + 1
 	}
