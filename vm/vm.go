@@ -204,6 +204,7 @@ func VMRun(vm *Closure) {
 			val := selfVm.Pop()
 			thisVm.Env.Frame[sym.GetValue()] = &val
 			thisVm.Mutex.Unlock()
+			selfVm.Push(val)
 			selfVm.Pc++
 		case "new-env":
 			env := &Env{
@@ -269,10 +270,6 @@ func VMRun(vm *Closure) {
 			selfVm = selfVm.ReturnCont
 			selfVm.Pc = retPc
 			selfVm.Push(val)
-			selfVm.Pc++
-		case "ramdom-id":
-			id := uuid.New()
-			selfVm.Push(reader.NewString(id.String()))
 			selfVm.Pc++
 		case "and":
 			argsSize, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
@@ -499,6 +496,10 @@ func VMRun(vm *Closure) {
 					fmt.Println("cdr target is not cons cell")
 				}
 				selfVm.Push(target.(reader.ConsCell).GetCdr())
+				selfVm.Pc++
+			case "ramdom-id":
+				id := uuid.New()
+				selfVm.Push(reader.NewString(id.String()))
 				selfVm.Pc++
 			}
 		case "end-code":
