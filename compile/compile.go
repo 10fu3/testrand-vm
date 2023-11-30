@@ -105,7 +105,7 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExp
 				result = append(result, reader.NewSymbol("pop"))
 			}
 		}
-		return result, addedRows + 1
+		return result, int64(len(result))
 	case "cond":
 		condAndBody, condAndBodySize := ToArraySexp(cellContent)
 
@@ -267,7 +267,7 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExp
 		opCode = append(opCode, funcOpCode...)
 		opCodeLine += funcOpCodeAffectLow
 
-		opCode[createFuncOpCodeLine] = reader.NewSymbol(fmt.Sprintf("create-lambda %d %d", varslen, funcOpCodeAffectLow+1))
+		opCode[createFuncOpCodeLine-nowStartLine] = reader.NewSymbol(fmt.Sprintf("create-lambda %d %d", varslen, funcOpCodeAffectLow+1))
 
 		opCode = append(opCode, reader.NewSymbol("ret"))
 
