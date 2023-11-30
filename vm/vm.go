@@ -509,9 +509,15 @@ func VMRun(vm *Closure) {
 	}
 ESCAPE:
 	{
-		selfVm.Stack = []reader.SExpression{}
-		selfVm.Code = []reader.SExpression{}
-		selfVm.Pc = 0
+		for {
+			selfVm.Stack = []reader.SExpression{}
+			selfVm.Code = []reader.SExpression{}
+			selfVm.Pc = 0
+			if selfVm.ReturnCont == nil {
+				break
+			}
+			selfVm = selfVm.ReturnCont
+		}
 	}
 }
 
