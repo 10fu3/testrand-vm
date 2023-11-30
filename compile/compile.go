@@ -79,16 +79,16 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExp
 			panic("Invalid Syntax Quote")
 		}
 		return []reader.SExpression{reader.NewSymbol(fmt.Sprintf("load-sexp %s\n", cellArr[0]))}, 1
-	case "loop":
-		if 2 != cellArrLen {
-			panic("Invalid syntax 2")
-		}
-		// cond-opcode(?)|jump-(1)|loop-body-opcode(?)|jump-lable(1)
-		loopCond := cellArr[0]
-		condOpCode, condAffectedCode := _generateOpCode(loopCond, nowStartLine)
-		loopBody := cellArr[1]
-		bodyOpCode, bodyAffectedCode := _generateOpCode(loopBody, nowStartLine+condAffectedCode+1)
-		return append(append(condOpCode, reader.NewSymbol(fmt.Sprintf("jump %d", nowStartLine+condAffectedCode+bodyAffectedCode+2))), append(bodyOpCode, reader.NewSymbol(fmt.Sprintf("jump-%d", nowStartLine)))...), condAffectedCode + bodyAffectedCode + 2
+	//case "loop":
+	//	if 2 != cellArrLen {
+	//		panic("Invalid syntax 2")
+	//	}
+	//	// cond-opcode(?)|jump-(1)|loop-body-opcode(?)|jump-lable(1)
+	//	loopCond := cellArr[0]
+	//	condOpCode, condAffectedCode := _generateOpCode(loopCond, nowStartLine)
+	//	loopBody := cellArr[1]
+	//	bodyOpCode, bodyAffectedCode := _generateOpCode(loopBody, nowStartLine+condAffectedCode+1)
+	//	return append(append(condOpCode, reader.NewSymbol(fmt.Sprintf("jump %d", nowStartLine+condAffectedCode+bodyAffectedCode+2))), append(bodyOpCode, reader.NewSymbol(fmt.Sprintf("jump-%d", nowStartLine)))...), condAffectedCode + bodyAffectedCode + 2
 	case "begin":
 		bodies, bodiesSize := ToArraySexp(cellContent)
 		var result []reader.SExpression
@@ -142,7 +142,7 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExp
 
 			indexesIndex += condAffectedCode
 
-			opCodes[indexesIndex] = reader.NewSymbol(fmt.Sprintf("jump-else %d", nowLine+condAffectedCode+bodyAffectedCode+2))
+			opCodes[indexesIndex] = reader.NewSymbol(fmt.Sprintf("jmp-else %d", nowLine+condAffectedCode+bodyAffectedCode+2))
 
 			indexesIndex += 1
 
@@ -161,7 +161,7 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExp
 		}
 
 		for i := int64(0); i < condAndBodySize; i++ {
-			opCodes[lastIndexes[i]] = reader.NewSymbol(fmt.Sprintf("jump %d", nowLine))
+			opCodes[lastIndexes[i]] = reader.NewSymbol(fmt.Sprintf("jmp %d", nowLine))
 		}
 
 		return opCodes, int64(len(opCodes))
@@ -272,6 +272,28 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]reader.SExp
 		opCode = append(opCode, reader.NewSymbol("ret"))
 
 		return opCode, opCodeLine - nowStartLine + 1 //+1 is return instr count
+
+	case "loop":
+		if 2 != cellArrLen {
+			panic("Invalid syntax 6")
+		}
+
+		cond := cellArr[0]
+		body := cellArr[1]
+
+		//cond|jmp-else|body|jmp|...
+
+		startIndex := nowStartLine
+		condOpCode, condAffectedCode := _generateOpCode(cond, nowStartLine)
+		bodyOpCode, bodyAffectedCode := _generateOpCode(body, nowStartLine+condAffectedCode+1)
+
+		opCode := append(condOpCode, reader.NewSymbol(fmt.Sprintf("jmp-else-dummy %d", nowStartLine+condAffectedCode+1+bodyAffectedCode)))
+		dummyIndex := condAffectedCode
+		opCode = append(opCode, bodyOpCode...)
+		opCode = append(opCode, reader.NewSymbol(fmt.Sprintf("jmp %d", startIndex)))
+		opCode[dummyIndex] = reader.NewSymbol(fmt.Sprintf("jmp-else %d", nowStartLine+condAffectedCode+1+bodyAffectedCode))
+
+		return opCode, condAffectedCode + 1 + bodyAffectedCode + 1
 	}
 
 	var carOpCode []reader.SExpression

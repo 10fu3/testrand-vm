@@ -114,12 +114,12 @@ func VMRun(vm *Closure) {
 
 			selfVm.Pop()
 			selfVm.Pc++
-		case "jump":
+		case "jmp":
 			jumpTo, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
 
 			selfVm.Pc = jumpTo
 
-		case "jump-if":
+		case "jmp-if":
 			jumpTo, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
 			val := selfVm.Pop()
 			if val.SExpressionTypeId() != reader.SExpressionTypeBool {
@@ -131,7 +131,7 @@ func VMRun(vm *Closure) {
 			} else {
 				selfVm.Pc++
 			}
-		case "jump-else":
+		case "jmp-else":
 			jumpTo, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
 			val := selfVm.Pop()
 			if val.SExpressionTypeId() != reader.SExpressionTypeBool {
