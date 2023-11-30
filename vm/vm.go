@@ -62,6 +62,33 @@ func (vm *Closure) IsList() bool {
 	return false
 }
 
+func (vm *Closure) Clone() *Closure {
+
+	//stack clone
+	stack := make([]reader.SExpression, len(vm.Stack))
+	for i, v := range vm.Stack {
+		stack[i] = v
+	}
+
+	//code clone
+	code := make([]reader.SExpression, len(vm.Code))
+	for i, v := range vm.Code {
+		code[i] = v
+	}
+
+	return &Closure{
+		Mutex:         &sync.RWMutex{},
+		Stack:         stack,
+		Code:          code,
+		Pc:            vm.Pc,
+		Env:           vm.Env,
+		Cont:          vm.Cont,
+		ReturnCont:    vm.ReturnCont,
+		ReturnPc:      vm.ReturnPc,
+		TemporaryArgs: vm.TemporaryArgs,
+	}
+}
+
 func (vm *Closure) Equals(sexp reader.SExpression) bool {
 	//TODO implement me
 	panic("implement me")
