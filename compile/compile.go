@@ -48,6 +48,7 @@ func IsNativeFunc(sexp reader.SExpression) bool {
 		"car",
 		"cdr",
 		"cons",
+		"random-id",
 		"array",
 		"array-get",
 		"array-set",
