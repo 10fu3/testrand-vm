@@ -13,7 +13,7 @@ func BenchmarkRead(b *testing.B) {
 	sample := strings.NewReader(`
 (begin
 (define a 0)
-(loop (< a 10000000) (begin
+(loop (< a 50000000) (begin
 (set a (+ a 1))
 ))
 a
