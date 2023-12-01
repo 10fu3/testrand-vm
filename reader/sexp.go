@@ -441,7 +441,7 @@ func (a *NativeArray) Push(value SExpression) {
 	a.elements = append(a.elements, value)
 }
 
-func NewNativeArray(elements []SExpression) SExpression {
+func NewNativeArray(elements []SExpression) *NativeArray {
 	return &NativeArray{elements: elements}
 }
 
@@ -509,7 +509,7 @@ func (h *NativeHashMap) Keys() []SExpression {
 	return keys
 }
 
-func NewNativeHashmap(elements map[string]SExpression) SExpression {
+func NewNativeHashmap(elements map[string]SExpression) *NativeHashMap {
 	return &NativeHashMap{elements: elements}
 }
 
