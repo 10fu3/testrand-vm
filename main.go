@@ -24,6 +24,10 @@ func main() {
 
 		machine.AddCode(stack)
 
+		for i := 0; i < len(stack); i++ {
+			fmt.Println(stack[i])
+		}
+
 		vm.VMRun(machine)
 
 		fmt.Println("pc:", machine.Pc, "len:", stacklen)

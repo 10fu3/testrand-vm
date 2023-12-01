@@ -63,7 +63,7 @@ func CreatePushNilInstr() Instr {
 }
 
 func CreatePushSExpressionInstr(sexp reader.SExpression) Instr {
-	return NewInstr(OPCODE_PUSH_SEXP, []byte(sexp.String()))
+	return NewInstr(OPCODE_PUSH_SEXP, []byte(fmt.Sprintf("%s\n", sexp)))
 }
 
 func CreateJmpInstr(jmpTo int64) Instr {
@@ -241,23 +241,96 @@ func CreateRandomIdInstr(argsSize int64) Instr {
 	return NewInstr(OPCODE_RANDOM_ID, []byte{})
 }
 
+func CreateNewArrayInstr(argsSize int64) Instr {
+	return NewInstr(OPCODE_NEW_ARRAY, []byte{})
+}
+
+func CreateArrayGetInstr(argsSize int64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, uint64(argsSize))
+	return NewInstr(OPCODE_ARRAY_GET, b)
+}
+
+func CreateArraySetInstr(argsSize int64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, uint64(argsSize))
+	return NewInstr(OPCODE_ARRAY_SET, b)
+}
+
+func CreateArrayLengthInstr(argsSize int64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, uint64(argsSize))
+	return NewInstr(OPCODE_ARRAY_LENGTH, b)
+}
+
+func CreateArrayPushInstr(argsSize int64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, uint64(argsSize))
+	return NewInstr(OPCODE_ARRAY_PUSH, b)
+}
+
+func CreateNewMapInstr(argsSize int64) Instr {
+	return NewInstr(OPCODE_NEW_MAP, []byte{})
+}
+
+func CreateMapGetInstr(argsSize int64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, uint64(argsSize))
+	return NewInstr(OPCODE_MAP_GET, b)
+}
+
+func CreateMapSetInstr(argsSize int64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, uint64(argsSize))
+	return NewInstr(OPCODE_MAP_SET, b)
+}
+
+func CreateMapLengthInstr(argsSize int64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, uint64(argsSize*2))
+	return NewInstr(OPCODE_MAP_LENGTH, b)
+}
+
+func CreateMapKeysInstr(argsSize int64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, uint64(argsSize*2))
+	return NewInstr(OPCODE_MAP_KEYS, b)
+}
+
+func CreateMapDeleteInstr(argsSize int64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, uint64(argsSize*2))
+	return NewInstr(OPCODE_MAP_DELETE, b)
+}
+
 var NativeFuncNameToOpCodeMap = map[string]FunctionGenerateInstr{
-	"print":     CreatePrintInstr,
-	"println":   CreatePrintlnInstr,
-	"+":         CreatePlusNumInstr,
-	"-":         CreateMinusNumInstr,
-	"*":         CreateMultiplyNumInstr,
-	"/":         CreateDivideNumInstr,
-	"%":         CreateModuloNumInstr,
-	"=":         CreateEqualNumInstr,
-	"!=":        CreateNotEqualNumInstr,
-	">":         CreateGreaterThanNumInstr,
-	">=":        CreateGreaterThanOrEqualNumInstr,
-	"<":         CreateLessThanNumInstr,
-	"<=":        CreateLessThanOrEqualNumInstr,
-	"car":       CreateCarInstr,
-	"cdr":       CreateCdrInstr,
-	"random-id": CreateRandomIdInstr,
+	"print":      CreatePrintInstr,
+	"println":    CreatePrintlnInstr,
+	"+":          CreatePlusNumInstr,
+	"-":          CreateMinusNumInstr,
+	"*":          CreateMultiplyNumInstr,
+	"/":          CreateDivideNumInstr,
+	"%":          CreateModuloNumInstr,
+	"=":          CreateEqualNumInstr,
+	"!=":         CreateNotEqualNumInstr,
+	">":          CreateGreaterThanNumInstr,
+	">=":         CreateGreaterThanOrEqualNumInstr,
+	"<":          CreateLessThanNumInstr,
+	"<=":         CreateLessThanOrEqualNumInstr,
+	"car":        CreateCarInstr,
+	"cdr":        CreateCdrInstr,
+	"random-id":  CreateRandomIdInstr,
+	"array":      CreateNewArrayInstr,
+	"array-get":  CreateArrayGetInstr,
+	"array-set":  CreateArraySetInstr,
+	"array-len":  CreateArrayLengthInstr,
+	"array-push": CreateArrayPushInstr,
+	"map":        CreateNewMapInstr,
+	"map-get":    CreateMapGetInstr,
+	"map-set":    CreateMapSetInstr,
+	"map-len":    CreateMapLengthInstr,
+	"map-keys":   CreateMapKeysInstr,
+	"map-delete": CreateMapDeleteInstr,
 }
 
 func CreateEndCodeInstr() Instr {
@@ -439,5 +512,41 @@ func DeserializeLessThanNumInstr(data Instr) int64 {
 }
 
 func DeserializeLessThanOrEqualNumInstr(data Instr) int64 {
+	return int64(binary.LittleEndian.Uint64(data.Data))
+}
+
+func DeserializeNewArrayInstr(data Instr) int64 {
+	return int64(binary.LittleEndian.Uint64(data.Data))
+}
+
+func DeserializeArrayGetInstr(data Instr) int64 {
+	return int64(binary.LittleEndian.Uint64(data.Data))
+}
+
+func DeserializeArraySetInstr(data Instr) int64 {
+	return int64(binary.LittleEndian.Uint64(data.Data))
+}
+
+func DeserializeArrayLengthInstr(data Instr) int64 {
+	return int64(binary.LittleEndian.Uint64(data.Data))
+}
+
+func DeserializeNewMapInstr(data Instr) int64 {
+	return int64(binary.LittleEndian.Uint64(data.Data))
+}
+
+func DeserializeMapGetInstr(data Instr) int64 {
+	return int64(binary.LittleEndian.Uint64(data.Data))
+}
+
+func DeserializeMapSetInstr(data Instr) int64 {
+	return int64(binary.LittleEndian.Uint64(data.Data))
+}
+
+func DeserializeMapLengthInstr(data Instr) int64 {
+	return int64(binary.LittleEndian.Uint64(data.Data))
+}
+
+func DeserializeMapKeysInstr(data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
