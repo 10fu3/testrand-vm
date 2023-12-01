@@ -28,7 +28,36 @@ func IsNativeFunc(sexp reader.SExpression) bool {
 		return false
 	}
 	switch sexp.(reader.Symbol).GetValue() {
-	case "+", "-", "*", "/", "%", ">", "<", ">=", "<=", "=", "and", "or", "not", "eq?", "println", "print", "car", "cdr":
+	case
+		"+",
+		"-",
+		"*",
+		"/",
+		"%",
+		">",
+		"<",
+		">=",
+		"<=",
+		"=",
+		"and",
+		"or",
+		"not",
+		"eq?",
+		"println",
+		"print",
+		"car",
+		"cdr",
+		"cons",
+		"array",
+		"array-get",
+		"array-set",
+		"array-len",
+		"array-push",
+		"map",
+		"map-get",
+		"map-set",
+		"map-len",
+		"map-keys":
 		return true
 	}
 	return false
@@ -344,7 +373,11 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr
 	if IsNativeFunc(cell.GetCar()) {
 		//carOpCode = []reader.SExpression{reader.NewSymbol(fmt.Sprintf("%s %d", cell.GetCar(), argsLen))}
 		funcName := cell.GetCar().(reader.Symbol).GetValue()
-		carOpCode = []instr.Instr{instr.NativeFuncNameToOpCodeMap[funcName](argsLen)}
+		tartgetFunc := instr.NativeFuncNameToOpCodeMap[funcName]
+		if nil == tartgetFunc {
+			panic("Invalid syntax 7")
+		}
+		carOpCode = []instr.Instr{tartgetFunc(argsLen)}
 
 		carAffectedCode = 1
 		cdrAffectedCode := affectedCdrOpeCodeRowCount - nowStartLine

@@ -16,11 +16,6 @@ type SExpression interface {
 	Equals(sexp SExpression) bool
 }
 
-type Subroutine interface {
-	SExpression
-	Apply(arg SExpression)
-}
-
 type Symbol interface {
 	SExpression
 	GetValue() string
@@ -388,6 +383,134 @@ func IsEmptyList(list SExpression) bool {
 	tmp := (list).(ConsCell)
 
 	return "nil" == tmp.GetCar().TypeId() && "nil" == tmp.GetCdr().TypeId()
+}
+
+type NativeArray struct {
+	elements []SExpression
+}
+
+func (a *NativeArray) TypeId() string {
+	return "native_array"
+}
+
+func (a *NativeArray) SExpressionTypeId() SExpressionType {
+	return SExpressionTypeNativeArray
+}
+
+func (a *NativeArray) String() string {
+	var joinedString strings.Builder
+	joinedString.WriteString("[")
+	for i, elm := range a.elements {
+		if i != 0 {
+			joinedString.WriteString(" ")
+		}
+		joinedString.WriteString(fmt.Sprintf("%v", elm))
+	}
+	joinedString.WriteString("]")
+	return joinedString.String()
+}
+
+func (a *NativeArray) IsList() bool {
+	return false
+}
+
+func (a *NativeArray) Equals(sexp SExpression) bool {
+	if "native_array" != sexp.TypeId() {
+		return false
+	}
+	return a == sexp.(*NativeArray)
+}
+
+func (a *NativeArray) Get(index int64) SExpression {
+	return a.elements[index]
+}
+
+func (a *NativeArray) Length() int64 {
+	return int64(len(a.elements))
+}
+
+func (a *NativeArray) Set(index int64, value SExpression) error {
+	if index < 0 || index >= int64(len(a.elements)) {
+		return errors.New("index out of bounds")
+	}
+	a.elements[index] = value
+	return nil
+}
+
+func (a *NativeArray) Push(value SExpression) {
+	a.elements = append(a.elements, value)
+}
+
+func NewNativeArray(elements []SExpression) SExpression {
+	return &NativeArray{elements: elements}
+}
+
+type NativeHashMap struct {
+	elements map[string]SExpression
+}
+
+func (h *NativeHashMap) TypeId() string {
+	return "native_hashmap"
+}
+
+func (h *NativeHashMap) SExpressionTypeId() SExpressionType {
+	return SExpressionTypeNativeHashmap
+}
+
+func (h *NativeHashMap) String() string {
+	var joinedString strings.Builder
+	joinedString.WriteString("{\n")
+	i := 0
+	for k, elm := range h.elements {
+		if i != 0 {
+			joinedString.WriteString(" ")
+		}
+		joinedString.WriteString(fmt.Sprintf("%s: %v\n", k, elm))
+		i++
+	}
+	joinedString.WriteString("}")
+	return joinedString.String()
+}
+
+func (h *NativeHashMap) IsList() bool {
+	return false
+}
+
+func (h *NativeHashMap) Equals(sexp SExpression) bool {
+	if "native_hashmap" != sexp.TypeId() {
+		return false
+	}
+	return h == sexp.(*NativeHashMap)
+}
+
+func (h *NativeHashMap) Get(key string) SExpression {
+	return h.elements[key]
+}
+
+func (h *NativeHashMap) Set(key string, value SExpression) {
+	h.elements[key] = value
+}
+
+func (h *NativeHashMap) Length() int64 {
+	return int64(len(h.elements))
+}
+
+func (h *NativeHashMap) Delete(key string) {
+	delete(h.elements, key)
+}
+
+func (h *NativeHashMap) Keys() []SExpression {
+	keys := make([]SExpression, len(h.elements))
+	i := 0
+	for k := range h.elements {
+		keys[i] = NewString(k)
+		i++
+	}
+	return keys
+}
+
+func NewNativeHashmap(elements map[string]SExpression) SExpression {
+	return &NativeHashMap{elements: elements}
 }
 
 type SExpressionType int

@@ -594,6 +594,125 @@ func VMRun(vm *Closure) {
 			id := uuid.New()
 			selfVm.Push(reader.NewString(id.String()))
 			selfVm.Pc++
+		case instr.OPCODE_NEW_ARRAY:
+			selfVm.Push(reader.NewNativeArray(nil))
+			selfVm.Pc++
+		case instr.OPCODE_ARRAY_GET:
+			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNumber {
+				fmt.Println("index is not number")
+				goto ESCAPE
+			}
+			index := selfVm.Pop().(reader.Number).GetValue()
+			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNativeArray {
+				fmt.Println("not an array")
+				goto ESCAPE
+			}
+			target := selfVm.Pop().(*reader.NativeArray)
+			selfVm.Push(target.Get(index))
+			selfVm.Pc++
+		case instr.OPCODE_ARRAY_SET:
+			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNumber {
+				fmt.Println("elem is not number")
+				goto ESCAPE
+			}
+			elem := selfVm.Pop()
+			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNumber {
+				fmt.Println("index is not number")
+				goto ESCAPE
+			}
+			index := selfVm.Pop().(reader.Number).GetValue()
+			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNativeArray {
+				fmt.Println("not an array")
+				goto ESCAPE
+			}
+			target := selfVm.Pop().(*reader.NativeArray)
+			if err := target.Set(index, elem); err != nil {
+				fmt.Println(err)
+				goto ESCAPE
+			}
+			selfVm.Push(target)
+			selfVm.Pc++
+		case instr.OPCODE_ARRAY_LENGTH:
+			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNativeArray {
+				fmt.Println("not an array")
+				goto ESCAPE
+			}
+			targetRaw := selfVm.Pop()
+			target := targetRaw.(*reader.NativeArray)
+			selfVm.Push(reader.NewInt(target.Length()))
+			selfVm.Pc++
+		case instr.OPCODE_ARRAY_PUSH:
+			elem := selfVm.Pop()
+			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNativeArray {
+				fmt.Println("not an array")
+				goto ESCAPE
+			}
+			targetRaw := selfVm.Pop()
+			target := targetRaw.(*reader.NativeArray)
+			target.Push(elem)
+			selfVm.Push(target)
+			selfVm.Pc++
+		case instr.OPCODE_NEW_MAP:
+			selfVm.Push(reader.NewNativeHashmap(nil))
+			selfVm.Pc++
+		case instr.OPCODE_MAP_GET:
+			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeString {
+				fmt.Println("key is not string")
+				goto ESCAPE
+			}
+			key := selfVm.Pop()
+			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNativeHashmap {
+				fmt.Println("not an hashmap")
+				goto ESCAPE
+			}
+			target := selfVm.Pop().(*reader.NativeHashMap)
+			selfVm.Push(target.Get(key.(reader.Str).GetValue()))
+			selfVm.Pc++
+		case instr.OPCODE_MAP_SET:
+			val := selfVm.Pop()
+			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeString {
+				fmt.Println("key is not string")
+				goto ESCAPE
+			}
+			key := selfVm.Pop()
+			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNativeHashmap {
+				fmt.Println("not an hashmap")
+				goto ESCAPE
+			}
+			target := selfVm.Pop().(*reader.NativeHashMap)
+			target.Set(key.(reader.Str).GetValue(), val)
+			selfVm.Push(target)
+			selfVm.Pc++
+		case instr.OPCODE_MAP_LENGTH:
+			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNativeHashmap {
+				fmt.Println("not an hashmap")
+				goto ESCAPE
+			}
+			target := selfVm.Pop().(*reader.NativeHashMap)
+			selfVm.Push(reader.NewInt(target.Length()))
+			selfVm.Pc++
+		case instr.OPCODE_MAP_KEYS:
+			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNativeHashmap {
+				fmt.Println("not an hashmap")
+				goto ESCAPE
+			}
+			target := selfVm.Pop().(*reader.NativeHashMap)
+			selfVm.Push(target)
+			selfVm.Pc++
+		case instr.OPCODE_MAP_DELETE:
+			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeString {
+				fmt.Println("key is not string")
+				goto ESCAPE
+			}
+			key := selfVm.Pop()
+			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNativeHashmap {
+				fmt.Println("not an hashmap")
+				goto ESCAPE
+			}
+			target := selfVm.Pop().(*reader.NativeHashMap)
+			target.Delete(key.(reader.Str).GetValue())
+			selfVm.Push(target)
+			selfVm.Pc++
 		}
 	}
 ESCAPE:
