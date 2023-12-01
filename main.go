@@ -20,12 +20,12 @@ func main() {
 		if err != nil {
 			break
 		}
-		stack, _ := compile.GenerateOpCode(sexp, machine.Pc)
+		stack, stacklen := compile.GenerateOpCode(sexp, machine.Pc)
 
 		machine.AddCode(stack)
 
 		vm.VMRun(machine)
 
-		fmt.Println("pc:", machine.Pc)
+		fmt.Println("pc:", machine.Pc, "len:", stacklen)
 	}
 }

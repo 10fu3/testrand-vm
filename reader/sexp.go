@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type SExpression interface {
@@ -56,35 +57,46 @@ func (s *symbol) GetValue() string {
 	return s.name
 }
 
+var internedSymbols = make(map[string]Symbol)
+var internedSymbolRWLock = sync.RWMutex{}
+
 func NewSymbol(sym string) Symbol {
-	return &symbol{name: sym}
+	internedSymbolRWLock.RLock()
+	if interned, ok := internedSymbols[sym]; ok {
+		internedSymbolRWLock.RUnlock()
+		return interned
+	}
+	internedSymbolRWLock.RUnlock()
+	internedSymbolRWLock.Lock()
+	defer internedSymbolRWLock.Unlock()
+	newSymbol := &symbol{name: sym}
+	internedSymbols[sym] = newSymbol
+	return newSymbol
 }
 
-type _int struct {
-	Value int64
+type _int int64
+
+func (i _int) GetValue() int64 {
+	return int64(i)
 }
 
-func (i *_int) GetValue() int64 {
-	return i.Value
+func (i _int) String() string {
+	return strconv.FormatInt(int64(i), 10)
 }
 
-func (i *_int) String() string {
-	return strconv.FormatInt(i.Value, 10)
-}
-
-func (i *_int) SExpressionTypeId() SExpressionType {
+func (i _int) SExpressionTypeId() SExpressionType {
 	return SExpressionTypeNumber
 }
 
-func (i *_int) TypeId() string {
+func (i _int) TypeId() string {
 	return "number"
 }
 
-func (i *_int) IsList() bool {
+func (i _int) IsList() bool {
 	return false
 }
 
-func (i *_int) Equals(sexp SExpression) bool {
+func (i _int) Equals(sexp SExpression) bool {
 	if "number" != sexp.TypeId() {
 		return false
 	}
@@ -98,9 +110,7 @@ type Number interface {
 }
 
 func NewInt(val int64) Number {
-	return &_int{
-		Value: val,
-	}
+	return _int(val)
 }
 
 type Bool interface {
@@ -109,49 +119,41 @@ type Bool interface {
 	SExpression
 }
 
-type _bool struct {
-	Value bool
-}
+type _bool bool
 
-func (b *_bool) Equals(sexp SExpression) bool {
-	if "bool" != sexp.TypeId() {
+func (b _bool) Equals(sexp SExpression) bool {
+	if b.SExpressionTypeId() != sexp.SExpressionTypeId() {
 		return false
 	}
 
-	return b.Value == sexp.(Bool).GetValue()
+	return b == sexp.(Bool)
 }
 
-func (b *_bool) GetValue() bool {
-	return b.Value
+func (b _bool) GetValue() bool {
+	return bool(b)
 }
 
-func (b *_bool) String() string {
-	if b.Value {
+func (b _bool) String() string {
+	if b {
 		return "#t"
 	}
 	return "#f"
 }
 
-func (b *_bool) TypeId() string {
+func (b _bool) TypeId() string {
 	return "bool"
 }
 
-func (b *_bool) SExpressionTypeId() SExpressionType {
+func (b _bool) SExpressionTypeId() SExpressionType {
 	return SExpressionTypeBool
 }
 
-func (b *_bool) IsList() bool {
+func (b _bool) IsList() bool {
 	return false
 }
 
-var trueSexp = &_bool{Value: true}
-var falseSexp = &_bool{Value: false}
-
 func NewBool(b bool) Bool {
-	if b {
-		return trueSexp
-	}
-	return falseSexp
+	return _bool(b)
 }
 
 type Str interface {
@@ -160,38 +162,36 @@ type Str interface {
 	SExpression
 }
 
-type _string struct {
-	Value string
-}
+type _string string
 
 func NewString(s string) Str {
-	return &_string{Value: s}
+	return _string(s)
 }
 
-func (s *_string) Equals(sexp SExpression) bool {
+func (s _string) Equals(sexp SExpression) bool {
 	if "string" != sexp.TypeId() {
 		return false
 	}
-	return s.Value == sexp.(Str).GetValue()
+	return s == sexp.(Str)
 }
 
-func (s *_string) GetValue() string {
-	return s.Value
+func (s _string) GetValue() string {
+	return string(s)
 }
 
-func (s *_string) String() string {
-	return fmt.Sprintf("\"%s\"", s.Value)
+func (s _string) String() string {
+	return fmt.Sprintf("\"%s\"", string(s))
 }
 
-func (s *_string) TypeId() string {
+func (s _string) TypeId() string {
 	return "string"
 }
 
-func (s *_string) SExpressionTypeId() SExpressionType {
+func (s _string) SExpressionTypeId() SExpressionType {
 	return SExpressionTypeString
 }
 
-func (s *_string) IsList() bool {
+func (s _string) IsList() bool {
 	return false
 }
 
@@ -222,8 +222,10 @@ func (n *_nil) IsList() bool {
 	return false
 }
 
+var _nilInstance = &_nil{}
+
 func NewNil() Nil {
-	return &_nil{}
+	return _nilInstance
 }
 
 type ConsCell interface {
@@ -397,8 +399,6 @@ const (
 	SExpressionTypeString
 	SExpressionTypeNil
 	SExpressionTypeConsCell
-	SExpressionTypeSubroutine
-	SExpressionTypeSpecialForm
 	SExpressionTypeClosure
 	SExpressionTypeNativeHashmap
 	SExpressionTypeNativeArray
