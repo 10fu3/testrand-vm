@@ -21,6 +21,113 @@ type Instr struct {
 }
 
 func (i Instr) String() string {
+	switch i.Type {
+	case OPCODE_POP:
+		return "Instr{Type: POP}"
+	case OPCODE_PUSH_NUM:
+		return fmt.Sprintf("Instr{Type: PUSH_NUM, Data: %d}", DeserializePushNumberInstr(i))
+	case OPCODE_PUSH_STR:
+		return fmt.Sprintf("Instr{Type: PUSH_STR, Data: %s}", DeserializePushStringInstr(i))
+	case OPCODE_PUSH_SYM:
+		return fmt.Sprintf("Instr{Type: PUSH_SYM, Data: %s}", DeserializePushSymbolInstr(i))
+	case OPCODE_PUSH_TRUE:
+		return "Instr{Type: PUSH_TRUE}"
+	case OPCODE_PUSH_FALSE:
+		return "Instr{Type: PUSH_FALSE}"
+	case OPCODE_PUSH_NIL:
+		return "Instr{Type: PUSH_NIL}"
+	case OPCODE_PUSH_SEXP:
+		sexp, err := DeserializeSexpressionInstr(i)
+		if err != nil {
+			panic(err)
+		}
+		return fmt.Sprintf("Instr{Type: PUSH_SEXP, Data: %s}", sexp)
+	case OPCODE_JMP:
+		return fmt.Sprintf("Instr{Type: JMP, Data: %d}", DeserializeJmpInstr(i))
+	case OPCODE_JMP_IF:
+		return fmt.Sprintf("Instr{Type: JMP_IF, Data: %d}", DeserializeJmpIfInstr(i))
+	case OPCODE_JMP_ELSE:
+		return fmt.Sprintf("Instr{Type: JMP_ELSE, Data: %d}", DeserializeJmpElseInstr(i))
+	case OPCODE_LOAD:
+		return "Instr{Type: LOAD}"
+	case OPCODE_DEFINE:
+		return fmt.Sprintf("Instr{Type: DEFINE, Data: %s}", DeserializeDefineInstr(i))
+	case OPCODE_DEFINE_ARGS:
+		return fmt.Sprintf("Instr{Type: DEFINE_ARGS, Data: %s}", DeserializeDefineArgsInstr(i))
+	case OPCODE_SET:
+		return fmt.Sprintf("Instr{Type: SET, Data: %s}", DeserializeSetInstr(i))
+	case OPCODE_NEW_ENV:
+		return "Instr{Type: NEW_ENV}"
+	case OPCODE_CREATE_CLOSURE:
+		varslen, funcOpAffectedCode := DeserializeCreateClosureInstr(i)
+		return fmt.Sprintf("Instr{Type: CREATE_CLOSURE, Data: %d, %d}", varslen, funcOpAffectedCode)
+	case OPCODE_CALL:
+		return fmt.Sprintf("Instr{Type: CALL, Data: %d}", DeserializeCallInstr(i))
+	case OPCODE_RETURN:
+		return "Instr{Type: RETURN}"
+	case OPCODE_AND:
+		return fmt.Sprintf("Instr{Type: AND, ArgsSize: %d}", DeserializeAndInstr(i))
+	case OPCODE_OR:
+		return fmt.Sprintf("Instr{Type: OR, ArgsSize: %d}", DeserializeOrInstr(i))
+	case OPCODE_PRINT:
+		return fmt.Sprintf("Instr{Type: PRINT, ArgsSize: %d}", DeserializePrintInstr(i))
+	case OPCODE_PRINTLN:
+		return fmt.Sprintf("Instr{Type: PRINTLN, ArgsSize: %d}", DeserializePrintlnInstr(i))
+	case OPCODE_PLUS_NUM:
+		return fmt.Sprintf("Instr{Type: PLUS_NUM, ArgsSize: %d}", DeserializePlusNumInstr(i))
+	case OPCODE_MINUS_NUM:
+		return fmt.Sprintf("Instr{Type: MINUS_NUM, ArgsSize: %d}", DeserializeMinusNumInstr(i))
+	case OPCODE_MULTIPLY_NUM:
+		return fmt.Sprintf("Instr{Type: MULTIPLY_NUM, ArgsSize: %d}", DeserializeMultiplyNumInstr(i))
+	case OPCODE_DIVIDE_NUM:
+		return fmt.Sprintf("Instr{Type: DIVIDE_NUM, ArgsSize: %d}", DeserializeDivideNumInstr(i))
+	case OPCODE_MODULO_NUM:
+		return fmt.Sprintf("Instr{Type: MODULO_NUM, ArgsSize: %d}", DeserializeModuloNumInstr(i))
+	case OPCODE_EQUAL_NUM:
+		return fmt.Sprintf("Instr{Type: EQUAL_NUM, ArgsSize: %d}", DeserializeEqualNumInstr(i))
+	case OPCODE_NOT_EQUAL_NUM:
+		return fmt.Sprintf("Instr{Type: NOT_EQUAL_NUM, ArgsSize: %d}", DeserializeNotEqualNumInstr(i))
+	case OPCODE_GREATER_THAN_NUM:
+		return fmt.Sprintf("Instr{Type: GREATER_THAN_NUM, ArgsSize: %d}", DeserializeGreaterThanNumInstr(i))
+	case OPCODE_GREATER_THAN_OR_EQUAL_NUM:
+		return fmt.Sprintf("Instr{Type: GREATER_THAN_OR_EQUAL_NUM, ArgsSize: %d}", DeserializeGreaterThanOrEqualNumInstr(i))
+	case OPCODE_LESS_THAN_NUM:
+		return fmt.Sprintf("Instr{Type: LESS_THAN_NUM, ArgsSize: %d}", DeserializeLessThanNumInstr(i))
+	case OPCODE_LESS_THAN_OR_EQUAL_NUM:
+		return fmt.Sprintf("Instr{Type: LESS_THAN_OR_EQUAL_NUM, ArgsSize: %d}", DeserializeLessThanOrEqualNumInstr(i))
+	case OPCODE_CAR:
+		return "Instr{Type: CAR}"
+	case OPCODE_CDR:
+		return "Instr{Type: CDR}"
+	case OPCODE_RANDOM_ID:
+		return "Instr{Type: RANDOM_ID}"
+	case OPCODE_NEW_ARRAY:
+		return "Instr{Type: NEW_ARRAY}"
+	case OPCODE_ARRAY_GET:
+		return fmt.Sprintf("Instr{Type: ARRAY_GET}")
+	case OPCODE_ARRAY_SET:
+		return fmt.Sprintf("Instr{Type: ARRAY_SET}")
+	case OPCODE_ARRAY_LENGTH:
+		return fmt.Sprintf("Instr{Type: ARRAY_LENGTH}")
+	case OPCODE_ARRAY_PUSH:
+		return fmt.Sprintf("Instr{Type: ARRAY_PUSH}")
+	case OPCODE_NEW_MAP:
+		return fmt.Sprintf("Instr{Type: NEW_MAP}")
+	case OPCODE_MAP_GET:
+		return fmt.Sprintf("Instr{Type: MAP_GET}")
+	case OPCODE_MAP_SET:
+		return fmt.Sprintf("Instr{Type: MAP_SET}")
+	case OPCODE_MAP_LENGTH:
+		return fmt.Sprintf("Instr{Type: MAP_LENGTH}")
+	case OPCODE_MAP_KEYS:
+		return fmt.Sprintf("Instr{Type: MAP_KEYS}")
+	case OPCODE_MAP_DELETE:
+		return fmt.Sprintf("Instr{Type: MAP_DELETE}")
+	case OPCODE_END_CODE:
+		return "Instr{Type: END_CODE}"
+	case OPCODE_NOP:
+		return "Instr{Type: NOP}"
+	}
 	return fmt.Sprintf("Instr{Length: %d, Type: %s, Data: %s}", i.Length, OpCodeMap[i.Type], string(i.Data))
 }
 
@@ -528,6 +635,10 @@ func DeserializeArraySetInstr(data Instr) int64 {
 }
 
 func DeserializeArrayLengthInstr(data Instr) int64 {
+	return int64(binary.LittleEndian.Uint64(data.Data))
+}
+
+func DeserializeArrayPushInstr(data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
