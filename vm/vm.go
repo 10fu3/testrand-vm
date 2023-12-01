@@ -354,16 +354,16 @@ func VMRun(vm *Closure) {
 		case instr.OPCODE_OR:
 			//argsSize, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
 			argsSize := instr.DeserializeOrInstr(code)
-			var tmp reader.SExpression
+			var tmp reader.SExpression = selfVm.Pop()
 			flag := false
-			for i := int64(1); i < argsSize; i++ {
-				tmp = selfVm.Pop()
-				if flag == true {
-					continue
-				}
+			for i := int64(0); i < argsSize; i++ {
 				if tmp.(reader.Bool).GetValue() {
 					flag = true
 				}
+				if flag == true {
+					continue
+				}
+				tmp = selfVm.Pop()
 			}
 			if flag {
 				selfVm.Push(reader.NewBool(true))

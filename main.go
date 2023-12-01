@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"fmt"
 	"os"
 	"testrand-vm/compile"
 	eval "testrand-vm/reader"
@@ -20,16 +19,17 @@ func main() {
 		if err != nil {
 			break
 		}
-		stack, stacklen := compile.GenerateOpCode(sexp, machine.Pc)
+		//stack, stacklen := compile.GenerateOpCode(sexp, machine.Pc)
+		stack, _ := compile.GenerateOpCode(sexp, machine.Pc)
 
 		machine.AddCode(stack)
 
-		for i := 0; i < len(stack); i++ {
-			fmt.Println(stack[i])
-		}
+		//for i := 0; i < len(stack); i++ {
+		//	fmt.Println(stack[i])
+		//}
 
 		vm.VMRun(machine)
 
-		fmt.Println("pc:", machine.Pc, "len:", stacklen)
+		//fmt.Println("pc:", machine.Pc, "len:", stacklen)
 	}
 }
