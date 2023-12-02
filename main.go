@@ -13,6 +13,7 @@ func main() {
 	read := eval.NewReader(stdin)
 
 	machine := vm.NewVM()
+	cont := vm.NewContinuation()
 
 	for {
 		sexp, err := read.Read()
@@ -20,9 +21,9 @@ func main() {
 			break
 		}
 		//stack, stacklen := compile.GenerateOpCode(sexp, machine.Pc)
-		stack, _ := compile.GenerateOpCode(sexp, machine.Pc)
-
-		machine.AddCode(stack)
+		stack, _ := compile.GenerateOpCode(sexp, 0)
+		cont.Code = stack
+		machine.Cont = cont
 
 		//for i := 0; i < len(stack); i++ {
 		//	fmt.Println(stack[i])

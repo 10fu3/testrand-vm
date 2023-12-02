@@ -22,8 +22,11 @@ a
 	r := bufio.NewReader(sample)
 	machine := vm.NewVM()
 	sexp, err := reader.NewReader(r).Read()
-	stack, _ := compile.GenerateOpCode(sexp, machine.Pc)
-	machine.AddCode(stack)
+	cont := vm.NewContinuation()
+
+	stack, _ := compile.GenerateOpCode(sexp, cont.Pc)
+	cont.Code = stack
+	machine.Cont = cont
 	if err != nil {
 		panic(err)
 	}

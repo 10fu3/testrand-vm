@@ -523,6 +523,7 @@ const (
 	SExpressionTypeNil
 	SExpressionTypeConsCell
 	SExpressionTypeClosure
+	SExpressionTypeContinuation
 	SExpressionTypeNativeHashmap
 	SExpressionTypeNativeArray
 	SExpressionTypeEnvironment
