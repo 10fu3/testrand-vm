@@ -293,7 +293,7 @@ func VMRun(vm *Machine) {
 				if meEnv.Parent == nil {
 					break
 				}
-				meEnv = meEnv
+				meEnv = meEnv.Parent
 			}
 			if found {
 				selfVm.Cont.Push(*meEnv.Frame[sym.GetValue()])
@@ -407,7 +407,7 @@ func VMRun(vm *Machine) {
 
 				cont := rawRunnable.(*Continuation).Clone()
 				cont.SetParent(selfVm.Cont)
-
+				cont.Push(cont)
 				selfVm.Cont = cont
 
 				for i := int64(0); i < argsSize; i++ {

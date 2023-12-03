@@ -324,7 +324,7 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr
 		//opCode = append(opCode, reader.NewSymbol("ret"))
 		opCode = append(opCode, instr.CreateRetInstr())
 
-		return opCode, opCodeLine - nowStartLine + 1 //+1 is return instr count
+		return opCode, int64(len(opCode)) //+1 is return instr count
 
 	case "loop":
 		if 2 != cellArrLen {
@@ -352,7 +352,7 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr
 		//opCode[dummyIndex] = reader.NewSymbol(fmt.Sprintf("jmp-else %d", nowStartLine+condAffectedCode+1+bodyAffectedCode+1))
 		opCode[dummyIndex] = instr.CreateJmpElseInstr(nowStartLine + condAffectedCode + 1 + bodyAffectedCode + 1)
 
-		return opCode, condAffectedCode + 1 + bodyAffectedCode + 1
+		return opCode, int64(len(opCode))
 	}
 
 	//if reader.IsEmptyList(cell.GetCdr()) {
