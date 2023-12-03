@@ -410,11 +410,11 @@ func VMRun(vm *Closure) {
 		//case "-":
 		case instr.OPCODE_MINUS_NUM:
 			argLen := instr.DeserializeMinusNumInstr(code)
-			sum := selfVm.Pop().(reader.Number).GetValue()
-			for i := int64(1); i < argLen; i++ {
-				sum -= selfVm.Pop().(reader.Number).GetValue()
+			minus := int64(0)
+			for i := int64(0); i < argLen-1; i++ {
+				minus += selfVm.Pop().(reader.Number).GetValue()
 			}
-			selfVm.Push(reader.NewInt(sum))
+			selfVm.Push(reader.NewInt(selfVm.Pop().(reader.Number).GetValue() - minus))
 			selfVm.Pc++
 		//case "*":
 		case instr.OPCODE_MULTIPLY_NUM:
@@ -428,19 +428,32 @@ func VMRun(vm *Closure) {
 		//case "/":
 		case instr.OPCODE_DIVIDE_NUM:
 			argLen := instr.DeserializeDivideNumInstr(code)
-			sum := selfVm.Pop().(reader.Number).GetValue()
-			for i := int64(1); i < argLen; i++ {
-				sum /= selfVm.Pop().(reader.Number).GetValue()
+			sum := int64(1)
+			for i := int64(1); i < argLen-1; i++ {
+				sum *= selfVm.Pop().(reader.Number).GetValue()
 			}
-			selfVm.Push(reader.NewInt(sum))
+			if sum == 0 {
+				fmt.Println("divide by zero")
+				goto ESCAPE
+			}
+			selfVm.Push(reader.NewInt(selfVm.Pop().(reader.Number).GetValue() / sum))
 			selfVm.Pc++
 		//case "mod":
 		case instr.OPCODE_MODULO_NUM:
 			argLen := instr.DeserializeModuloNumInstr(code)
-			sum := selfVm.Pop().(reader.Number).GetValue()
-			for i := int64(1); i < argLen; i++ {
-				sum %= selfVm.Pop().(reader.Number).GetValue()
+
+			args := make([]int64, argLen)
+
+			for i := argLen - 1; 0 <= i; i-- {
+				args[i] = selfVm.Pop().(reader.Number).GetValue()
 			}
+
+			sum := args[0]
+
+			for i := int64(1); i < argLen; i++ {
+				sum %= args[i]
+			}
+
 			selfVm.Push(reader.NewInt(sum))
 			selfVm.Pc++
 		//case "=":
