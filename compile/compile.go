@@ -58,7 +58,8 @@ func IsNativeFunc(sexp reader.SExpression) bool {
 		"map-get",
 		"map-set",
 		"map-len",
-		"map-keys":
+		"map-keys",
+		"call/cc":
 		return true
 	}
 	return false

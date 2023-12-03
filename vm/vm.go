@@ -33,15 +33,15 @@ func (e *Env) Equals(sexp reader.SExpression) bool {
 	panic("implement me")
 }
 
-type Stack struct {
+type RunStateStack struct {
 	Stack []reader.SExpression
 }
 
-func (st *Stack) Push(sexp reader.SExpression) {
+func (st *RunStateStack) Push(sexp reader.SExpression) {
 	st.Stack = append(st.Stack, sexp)
 }
 
-func (vm *Stack) Pop() reader.SExpression {
+func (vm *RunStateStack) Pop() reader.SExpression {
 	if len(vm.Stack) == 0 {
 		return nil
 	}
@@ -51,7 +51,7 @@ func (vm *Stack) Pop() reader.SExpression {
 	return ret
 }
 
-func (vm *Stack) Peek() reader.SExpression {
+func (vm *RunStateStack) Peek() reader.SExpression {
 	if len(vm.Stack) == 0 {
 		return nil
 	}
@@ -59,21 +59,46 @@ func (vm *Stack) Peek() reader.SExpression {
 	return vm.Stack[len(vm.Stack)-1]
 }
 
-func (vm *Stack) PeekIndex(index int) (reader.SExpression, error) {
-
-	if index < 0 || len(vm.Stack) <= index {
-		return nil, fmt.Errorf("index out of range")
+func (vm *RunStateStack) Clone() RunStateStack {
+	cloned := make([]reader.SExpression, len(vm.Stack))
+	for i, v := range vm.Stack {
+		cloned[i] = v
 	}
+	return RunStateStack{Stack: cloned}
+}
 
-	return vm.Stack[index], nil
+type CodeStack []instr.Instr
+
+func (cs *CodeStack) Clone() CodeStack {
+	cloned := make([]instr.Instr, len(*cs))
+	copy(cloned, *cs)
+	return cloned
 }
 
 type Continuation struct {
-	Stack
+	RunStateStack
 	Env    *Env
-	Code   []instr.Instr
+	Code   CodeStack
 	Pc     int64
-	Parent *Continuation
+	parent *Continuation
+}
+
+func (c *Continuation) GetParent() *Continuation {
+	return c.parent
+}
+
+func (c *Continuation) SetParent(parent *Continuation) {
+	c.parent = parent
+}
+
+func (c *Continuation) Clone() *Continuation {
+	return &Continuation{
+		RunStateStack: c.RunStateStack.Clone(),
+		Env:           c.Env,
+		Code:          c.Code.Clone(),
+		Pc:            c.Pc,
+		parent:        c.parent,
+	}
 }
 
 func (c *Continuation) TypeId() string {
@@ -101,9 +126,9 @@ func (c *Continuation) Equals(sexp reader.SExpression) bool {
 
 func NewContinuation() *Continuation {
 	return &Continuation{
-		Stack: Stack{Stack: make([]reader.SExpression, 0)},
-		Pc:    0,
-		Env:   &Env{Frame: make(map[string]*reader.SExpression)},
+		RunStateStack: RunStateStack{Stack: make([]reader.SExpression, 0)},
+		Pc:            0,
+		Env:           &Env{Frame: make(map[string]*reader.SExpression)},
 	}
 }
 
@@ -165,10 +190,10 @@ func NewVM() *Machine {
 	return &Machine{
 		Mutex: &sync.RWMutex{},
 		Cont: &Continuation{
-			Stack: Stack{Stack: make([]reader.SExpression, 0)},
-			Pc:    0,
-			Env:   &Env{Frame: make(map[string]*reader.SExpression)},
-			Code:  make([]instr.Instr, 0),
+			RunStateStack: RunStateStack{Stack: make([]reader.SExpression, 0)},
+			Pc:            0,
+			Env:           &Env{Frame: make(map[string]*reader.SExpression)},
+			Code:          make([]instr.Instr, 0),
 		},
 	}
 }
@@ -258,20 +283,20 @@ func VMRun(vm *Machine) {
 		case instr.OPCODE_LOAD:
 			sym := selfVm.Cont.Pop().(reader.Symbol)
 
-			meCont := selfVm.Cont
+			meEnv := selfVm.Cont.Env
 			found := false
 			for {
-				if meCont.Env.Frame[sym.GetValue()] != nil {
+				if meEnv.Frame[sym.GetValue()] != nil {
 					found = true
 					break
 				}
-				if meCont.Parent == nil {
+				if meEnv.Parent == nil {
 					break
 				}
-				meCont = meCont.Parent
+				meEnv = meEnv
 			}
 			if found {
-				selfVm.Cont.Push(*meCont.Env.Frame[sym.GetValue()])
+				selfVm.Cont.Push(*meEnv.Frame[sym.GetValue()])
 				selfVm.Cont.Pc++
 			} else {
 				fmt.Println("Symbol not found: " + sym.GetValue())
@@ -333,47 +358,23 @@ func VMRun(vm *Machine) {
 		//case "new-env":
 		case instr.OPCODE_NEW_ENV:
 			env := &Env{
-				Frame: make(map[string]*reader.SExpression),
+				Frame:  make(map[string]*reader.SExpression),
+				Parent: selfVm.Cont.Env,
 			}
 			selfVm.Cont.Push(env)
 			selfVm.Cont.Pc++
 		//case "create-lambda":
 		case instr.OPCODE_CREATE_CLOSURE:
-			//argsSizeAndCodeLen := strings.SplitN(opCodeAndArgs[1], " ", 2)
-			//argsSize, _ := strconv.ParseInt(argsSizeAndCodeLen[0], 10, 64)
-			//codeLen, _ := strconv.ParseInt(argsSizeAndCodeLen[1], 10, 64)
-
 			argsSize, codeLen := instr.DeserializeCreateClosureInstr(code)
 
 			pc := selfVm.Cont.Pc
 
-			//newVm := NewVM()
-			//
-			//for i := int64(1); i <= codeLen; i++ {
-			//	newVm.Code = append(newVm.Code, selfVm.Cont.Code[pc+i])
-			//	selfVm.Cont.Pc++
-			//}
-			//
-			//for i := int64(0); i < argsSize; i++ {
-			//	sym := selfVm.Cont.Pop().(reader.Symbol)
-			//	newVm.TemporaryArgs = append(newVm.TemporaryArgs, sym)
-			//}
-			//
-			//newVm.Continuation = selfVm
-			//newVm.Env = selfVm.Cont.Pop().(*Env)
-			//newVm.Pc = 0
-			//selfVm.Cont.Push(newVm)
-			//selfVm.Cont.Pc++
-
 			newClosure := &Closure{
 				Cont: &Continuation{
-					Stack: Stack{},
-					Env: &Env{
-						Frame: make(map[string]*reader.SExpression),
-					},
-					Code:   nil,
-					Pc:     0,
-					Parent: selfVm.Cont,
+					RunStateStack: RunStateStack{},
+					Env:           nil,
+					Code:          nil,
+					Pc:            0,
 				},
 			}
 
@@ -388,19 +389,41 @@ func VMRun(vm *Machine) {
 			}
 			newClosure.Cont.Env = selfVm.Cont.Pop().(*Env)
 			newClosure.Cont.Pc = 0
+			newClosure.Cont.SetParent(selfVm.Cont)
 			selfVm.Cont.Push(newClosure)
 			selfVm.Cont.Pc++
 
 		//case "call":
 		case instr.OPCODE_CALL:
-			rawClosure := selfVm.Cont.Pop()
+			rawRunnable := selfVm.Cont.Pop()
+			if rawRunnable.SExpressionTypeId() == reader.SExpressionTypeContinuation {
+				argsSize := instr.DeserializeCallInstr(code)
+				args := make([]reader.SExpression, argsSize)
 
-			if rawClosure.SExpressionTypeId() != reader.SExpressionTypeClosure {
+				//last pop
+				for i := argsSize - 1; i >= 0; i-- {
+					args[i] = selfVm.Cont.Pop()
+				}
+
+				cont := rawRunnable.(*Continuation).Clone()
+				cont.SetParent(selfVm.Cont)
+
+				selfVm.Cont = cont
+
+				for i := int64(0); i < argsSize; i++ {
+					//ここでなぜかプッシュされていないっぽい
+					selfVm.Cont.Push(args[i])
+				}
+
+				continue
+			}
+
+			if rawRunnable.SExpressionTypeId() != reader.SExpressionTypeClosure {
 				fmt.Println("not a closure")
 				goto ESCAPE
 			}
 
-			nextVm := rawClosure.(*Closure)
+			nextVm := rawRunnable.(*Closure)
 			env := nextVm.Cont.Env
 
 			argsSize := instr.DeserializeCallInstr(code)
@@ -415,20 +438,19 @@ func VMRun(vm *Machine) {
 				env.Frame[sym.GetValue()] = &val
 			}
 			nextVm.Cont.Env = env
-			nextVm.Cont.Stack.Push(selfVm.Cont)
+			nextVm.Cont.SetParent(selfVm.Cont)
+			nextVm.Cont.RunStateStack.Push(selfVm.Cont)
 
 			selfVm.Cont = nextVm.Cont
 		//case "ret":
 		case instr.OPCODE_RETURN:
 			val := selfVm.Cont.Pop()
-			retCont, err := selfVm.Cont.Stack.PeekIndex(0)
-			if err != nil {
-				panic(err)
-			}
 
-			selfVm.Cont.Stack.Stack = []reader.SExpression{}
+			retCont := selfVm.Cont.GetParent()
+
+			selfVm.Cont.RunStateStack.Stack = []reader.SExpression{}
 			selfVm.Cont.Pc = 0
-			selfVm.Cont = retCont.(*Continuation)
+			selfVm.Cont = retCont
 			selfVm.Cont.Push(val)
 			selfVm.Cont.Pc++
 		//case "and":
@@ -514,9 +536,10 @@ func VMRun(vm *Machine) {
 		case instr.OPCODE_MINUS_NUM:
 			argLen := instr.DeserializeMinusNumInstr(code)
 			sum := selfVm.Cont.Pop().(reader.Number).GetValue()
-			for i := int64(1); i < argLen; i++ {
+			for i := int64(1); i < argLen-1; i++ {
 				sum -= selfVm.Cont.Pop().(reader.Number).GetValue()
 			}
+			sum = selfVm.Cont.Pop().(reader.Number).GetValue() - sum
 			selfVm.Cont.Push(reader.NewInt(sum))
 			selfVm.Cont.Pc++
 		//case "*":
@@ -532,14 +555,23 @@ func VMRun(vm *Machine) {
 		case instr.OPCODE_DIVIDE_NUM:
 			argLen := instr.DeserializeDivideNumInstr(code)
 			sum := selfVm.Cont.Pop().(reader.Number).GetValue()
-			for i := int64(1); i < argLen; i++ {
-				sum /= selfVm.Cont.Pop().(reader.Number).GetValue()
+			for i := int64(1); i < argLen-1; i++ {
+				sum *= selfVm.Cont.Pop().(reader.Number).GetValue()
 			}
+			if sum == 0 {
+				fmt.Println("divided by zero")
+				goto ESCAPE
+			}
+			sum = selfVm.Cont.Pop().(reader.Number).GetValue() / sum
 			selfVm.Cont.Push(reader.NewInt(sum))
 			selfVm.Cont.Pc++
 		//case "mod":
 		case instr.OPCODE_MODULO_NUM:
 			argLen := instr.DeserializeModuloNumInstr(code)
+			if argLen != 2 {
+				fmt.Println("mod needs 2 args")
+				goto ESCAPE
+			}
 			sum := selfVm.Cont.Pop().(reader.Number).GetValue()
 			for i := int64(1); i < argLen; i++ {
 				sum %= selfVm.Cont.Pop().(reader.Number).GetValue()
@@ -816,23 +848,40 @@ func VMRun(vm *Machine) {
 			target.Delete(key.(reader.Str).GetValue())
 			selfVm.Cont.Push(target)
 			selfVm.Cont.Pc++
+		case instr.OPCODE_CALL_CC:
+			if selfVm.Cont.Peek().SExpressionTypeId() != reader.SExpressionTypeClosure {
+				fmt.Println("not a closure")
+				goto ESCAPE
+			}
+			closure := selfVm.Cont.Pop().(*Closure)
+			argsSize := instr.DeserializeCallCCInstr(code)
+
+			if argsSize > 1 {
+				fmt.Println("call_cc takes only one argument")
+				goto ESCAPE
+			}
+			//!be careful!
+			//go next instruction
+			//and clone continuation
+			var cont = selfVm.Cont.Clone()
+			cont.Pc = cont.Pc + 1
+			cont.SetParent(selfVm.Cont)
+			var castedCont reader.SExpression = cont
+			if argsSize == 1 {
+				closure.Cont.Env.Frame[closure.TemporaryArgs[0].GetValue()] = &castedCont
+			}
+			selfVm.Cont = closure.Cont
 		}
 	}
 ESCAPE:
 	{
-		cont := selfVm.Cont
-		for {
-			cont.Stack.Stack = []reader.SExpression{}
-			cont.Code = []instr.Instr{}
-			cont.Pc = 0
-			callParent, err := cont.Stack.PeekIndex(0)
-			if err != nil {
-				break
-			}
-			if callParent.SExpressionTypeId() != reader.SExpressionTypeContinuation {
-				break
-			}
-			cont = callParent.(*Continuation)
+		selfVm.Cont = &Continuation{
+			RunStateStack: RunStateStack{
+				Stack: make([]reader.SExpression, 0),
+			},
+			Env:  selfVm.Cont.Env,
+			Code: nil,
+			Pc:   0,
 		}
 	}
 }

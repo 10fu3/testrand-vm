@@ -1,56 +1,57 @@
 package instr
 
 const (
-	OPCODE_PUSH_SYM = uint8(iota)
-	OPCODE_PUSH_NUM
-	OPCODE_PUSH_TRUE
-	OPCODE_PUSH_FALSE
-	OPCODE_PUSH_STR
-	OPCODE_PUSH_NIL
-	OPCODE_PUSH_SEXP
-	OPCODE_POP
-	OPCODE_JMP
-	OPCODE_JMP_IF
-	OPCODE_JMP_ELSE
-	OPCODE_LOAD
-	OPCODE_DEFINE
-	OPCODE_DEFINE_ARGS
-	OPCODE_SET
-	OPCODE_NEW_ENV
-	OPCODE_CREATE_CLOSURE
-	OPCODE_CALL
-	OPCODE_RETURN
-	OPCODE_AND
-	OPCODE_OR
-	OPCODE_PRINT
-	OPCODE_PRINTLN
-	OPCODE_PLUS_NUM
-	OPCODE_MINUS_NUM
-	OPCODE_MULTIPLY_NUM
-	OPCODE_DIVIDE_NUM
-	OPCODE_MODULO_NUM
-	OPCODE_EQUAL_NUM
-	OPCODE_NOT_EQUAL_NUM
-	OPCODE_GREATER_THAN_NUM
-	OPCODE_GREATER_THAN_OR_EQUAL_NUM
-	OPCODE_LESS_THAN_NUM
-	OPCODE_LESS_THAN_OR_EQUAL_NUM
-	OPCODE_CAR
-	OPCODE_CDR
-	OPCODE_RANDOM_ID
-	OPCODE_NEW_ARRAY
-	OPCODE_ARRAY_GET
-	OPCODE_ARRAY_SET
-	OPCODE_ARRAY_LENGTH
-	OPCODE_ARRAY_PUSH
-	OPCODE_NEW_MAP
-	OPCODE_MAP_GET
-	OPCODE_MAP_SET
-	OPCODE_MAP_LENGTH
-	OPCODE_MAP_KEYS
-	OPCODE_MAP_DELETE
-	OPCODE_END_CODE
-	OPCODE_NOP
+	OPCODE_PUSH_SYM                  = uint8(iota) // 0
+	OPCODE_PUSH_NUM                                // 1
+	OPCODE_PUSH_TRUE                               // 2
+	OPCODE_PUSH_FALSE                              // 3
+	OPCODE_PUSH_STR                                // 4
+	OPCODE_PUSH_NIL                                // 5
+	OPCODE_PUSH_SEXP                               // 6
+	OPCODE_POP                                     // 7
+	OPCODE_JMP                                     // 8
+	OPCODE_JMP_IF                                  // 9
+	OPCODE_JMP_ELSE                                // 10
+	OPCODE_LOAD                                    // 11
+	OPCODE_DEFINE                                  // 12
+	OPCODE_DEFINE_ARGS                             // 13
+	OPCODE_SET                                     // 14
+	OPCODE_NEW_ENV                                 // 15
+	OPCODE_CREATE_CLOSURE                          // 16
+	OPCODE_CALL                                    // 17
+	OPCODE_RETURN                                  // 18
+	OPCODE_AND                                     // 19
+	OPCODE_OR                                      // 20
+	OPCODE_PRINT                                   // 21
+	OPCODE_PRINTLN                                 // 22
+	OPCODE_PLUS_NUM                                // 23
+	OPCODE_MINUS_NUM                               // 24
+	OPCODE_MULTIPLY_NUM                            // 25
+	OPCODE_DIVIDE_NUM                              // 26
+	OPCODE_MODULO_NUM                              // 27
+	OPCODE_EQUAL_NUM                               // 28
+	OPCODE_NOT_EQUAL_NUM                           // 29
+	OPCODE_GREATER_THAN_NUM                        // 30
+	OPCODE_GREATER_THAN_OR_EQUAL_NUM               // 31
+	OPCODE_LESS_THAN_NUM                           // 32
+	OPCODE_LESS_THAN_OR_EQUAL_NUM                  // 33
+	OPCODE_CAR                                     // 34
+	OPCODE_CDR                                     // 35
+	OPCODE_RANDOM_ID                               // 36
+	OPCODE_NEW_ARRAY                               // 37
+	OPCODE_ARRAY_GET                               // 38
+	OPCODE_ARRAY_SET                               // 39
+	OPCODE_ARRAY_LENGTH                            // 40
+	OPCODE_ARRAY_PUSH                              // 41
+	OPCODE_NEW_MAP                                 // 42
+	OPCODE_MAP_GET                                 // 43
+	OPCODE_MAP_SET                                 // 44
+	OPCODE_MAP_LENGTH                              // 45
+	OPCODE_MAP_KEYS                                // 46
+	OPCODE_MAP_DELETE                              // 47
+	OPCODE_END_CODE                                // 48
+	OPCODE_NOP                                     // 49
+	OPCODE_CALL_CC                                 // 50
 )
 
 var OpCodeMap = map[uint8]string{
@@ -135,5 +136,6 @@ func GetNativeFuncNameToOpCodeMap() map[string]uint8 {
 		"map-length":   OPCODE_MAP_LENGTH,
 		"map-keys":     OPCODE_MAP_KEYS,
 		"map-delete":   OPCODE_MAP_DELETE,
+		"call/cc":      OPCODE_CALL_CC,
 	}
 }

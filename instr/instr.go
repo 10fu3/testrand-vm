@@ -123,6 +123,8 @@ func (i Instr) String() string {
 		return fmt.Sprintf("Instr{Type: MAP_KEYS}")
 	case OPCODE_MAP_DELETE:
 		return fmt.Sprintf("Instr{Type: MAP_DELETE}")
+	case OPCODE_CALL_CC:
+		return fmt.Sprintf("Instr{Type: CALL_CC,ArgsSize: %d}", DeserializeCallCCInstr(i))
 	case OPCODE_END_CODE:
 		return "Instr{Type: END_CODE}"
 	case OPCODE_NOP:
@@ -394,20 +396,26 @@ func CreateMapSetInstr(argsSize int64) Instr {
 
 func CreateMapLengthInstr(argsSize int64) Instr {
 	b := make([]byte, 8)
-	binary.LittleEndian.PutUint64(b, uint64(argsSize*2))
+	binary.LittleEndian.PutUint64(b, uint64(argsSize))
 	return NewInstr(OPCODE_MAP_LENGTH, b)
 }
 
 func CreateMapKeysInstr(argsSize int64) Instr {
 	b := make([]byte, 8)
-	binary.LittleEndian.PutUint64(b, uint64(argsSize*2))
+	binary.LittleEndian.PutUint64(b, uint64(argsSize))
 	return NewInstr(OPCODE_MAP_KEYS, b)
 }
 
 func CreateMapDeleteInstr(argsSize int64) Instr {
 	b := make([]byte, 8)
-	binary.LittleEndian.PutUint64(b, uint64(argsSize*2))
+	binary.LittleEndian.PutUint64(b, uint64(argsSize))
 	return NewInstr(OPCODE_MAP_DELETE, b)
+}
+
+func CreateCallCCInstr(argsSize int64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, uint64(argsSize))
+	return NewInstr(OPCODE_CALL_CC, b)
 }
 
 var NativeFuncNameToOpCodeMap = map[string]FunctionGenerateInstr{
@@ -438,6 +446,7 @@ var NativeFuncNameToOpCodeMap = map[string]FunctionGenerateInstr{
 	"map-len":    CreateMapLengthInstr,
 	"map-keys":   CreateMapKeysInstr,
 	"map-delete": CreateMapDeleteInstr,
+	"call/cc":    CreateCallCCInstr,
 }
 
 func CreateEndCodeInstr() Instr {
@@ -659,5 +668,9 @@ func DeserializeMapLengthInstr(data Instr) int64 {
 }
 
 func DeserializeMapKeysInstr(data Instr) int64 {
+	return int64(binary.LittleEndian.Uint64(data.Data))
+}
+
+func DeserializeCallCCInstr(data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
