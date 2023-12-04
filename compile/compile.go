@@ -1,6 +1,7 @@
 package compile
 
 import (
+	"errors"
 	"testrand-vm/instr"
 	"testrand-vm/reader"
 )
@@ -27,50 +28,19 @@ func IsNativeFunc(sexp reader.SExpression) bool {
 	if reader.SExpressionTypeSymbol != sexp.SExpressionTypeId() {
 		return false
 	}
-	switch sexp.(reader.Symbol).GetValue() {
-	case
-		"+",
-		"-",
-		"*",
-		"/",
-		"%",
-		">",
-		"<",
-		">=",
-		"<=",
-		"=",
-		"and",
-		"or",
-		"not",
-		"eq?",
-		"println",
-		"print",
-		"car",
-		"cdr",
-		"cons",
-		"random-id",
-		"array",
-		"array-get",
-		"array-set",
-		"array-len",
-		"array-push",
-		"map",
-		"map-get",
-		"map-set",
-		"map-len",
-		"map-keys":
-		return true
+	if instr.NativeFuncNameToOpCodeMap[sexp.(reader.Symbol).GetValue()] == nil {
+		return false
 	}
-	return false
+	return true
 }
 
-func GenerateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr, int64) {
-	codes, leng := _generateOpCode(sexp, nowStartLine)
+func GenerateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr, int64, error) {
+	codes, leng, err := _generateOpCode(sexp, nowStartLine)
 	//return append(codes, reader.NewSymbol("end-code")), leng + 1
-	return append(codes, instr.CreateEndCodeInstr()), leng + 1
+	return append(codes, instr.CreateEndCodeInstr()), leng + 1, err
 }
 
-func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr, int64) {
+func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr, int64, error) {
 	switch sexp.SExpressionTypeId() {
 	case reader.SExpressionTypeSymbol:
 		//return []reader.SExpression{
@@ -78,16 +48,18 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr
 		//		reader.NewSymbol("load"),
 		//	},
 		//	2
-		return []instr.Instr{instr.CreatePushSymbolInstr(sexp.(reader.Symbol).GetValue()), instr.CreateLoadInstr()}, 2
+		return []instr.Instr{instr.CreatePushSymbolInstr(sexp.(reader.Symbol).GetValue()), instr.CreateLoadInstr()}, 2, nil
 	case reader.SExpressionTypeNumber:
 		//return []reader.SExpression{reader.NewSymbol(fmt.Sprintf("push-num %s", sexp.String()))}, 1
-		return []instr.Instr{instr.CreatePushNumberInstr(sexp.(reader.Number).GetValue())}, 1
+		return []instr.Instr{instr.CreatePushNumberInstr(sexp.(reader.Number).GetValue())}, 1, nil
 	case reader.SExpressionTypeBool:
 		//return []reader.SExpression{reader.NewSymbol(fmt.Sprintf("push-boo %s", sexp.String()))}, 1
-		return []instr.Instr{instr.CreatePushBoolInstr(sexp.(reader.Bool).GetValue())}, 1
+		return []instr.Instr{instr.CreatePushBoolInstr(sexp.(reader.Bool).GetValue())}, 1, nil
 	case reader.SExpressionTypeString:
 		//return []reader.SExpression{reader.NewSymbol(fmt.Sprintf("push-str %s", sexp.(reader.Str).GetValue()))}, 1
-		return []instr.Instr{instr.CreatePushStringInstr(sexp.(reader.Str).GetValue())}, 1
+		return []instr.Instr{instr.CreatePushStringInstr(sexp.(reader.Str).GetValue())}, 1, nil
+	case reader.SExpressionTypeNil:
+		return []instr.Instr{instr.CreatePushNilInstr()}, 1, nil
 	}
 
 	cell := sexp.(reader.ConsCell)
@@ -95,15 +67,18 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr
 	label := cell.GetCar()
 
 	if reader.SExpressionTypeSymbol != label.SExpressionTypeId() {
-		carOpCode, carAffectedCode := _generateOpCode(cell.GetCar(), nowStartLine)
+		carOpCode, carAffectedCode, err := _generateOpCode(cell.GetCar(), nowStartLine)
+		if err != nil {
+			return nil, 0, err
+		}
 		if reader.IsEmptyList(cell.GetCdr()) {
-			return carOpCode, carAffectedCode
+			return carOpCode, carAffectedCode, nil
 		}
 
 		_, argsLen := ToArraySexp(cell.GetCdr())
-		cdrOpCode, cdrAffectedCode := _generateOpCode(cell.GetCdr(), nowStartLine+carAffectedCode)
+		cdrOpCode, cdrAffectedCode, err := _generateOpCode(cell.GetCdr(), nowStartLine+carAffectedCode)
 		//return append(append(cdrOpCode, carOpCode...), reader.NewSymbol(fmt.Sprintf("call %d", argsLen))), carAffectedCode + cdrAffectedCode + 1
-		return append(append(cdrOpCode, carOpCode...), instr.CreateCallInstr(argsLen)), carAffectedCode + cdrAffectedCode + 1
+		return append(append(cdrOpCode, carOpCode...), instr.CreateCallInstr(argsLen)), carAffectedCode + cdrAffectedCode + 1, nil
 	}
 
 	cellContent := cell.GetCdr().(reader.ConsCell)
@@ -112,10 +87,10 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr
 	switch label.(reader.Symbol).GetValue() {
 	case "quote":
 		if cellArrLen != 1 {
-			panic("Invalid Syntax Quote")
+			return nil, 0, errors.New("Invalid Syntax Quote")
 		}
 		//return []reader.SExpression{reader.NewSymbol(fmt.Sprintf("load-sexp %s\n", cellArr[0]))}, 1
-		return []instr.Instr{instr.CreatePushSExpressionInstr(cellArr[0])}, 1
+		return []instr.Instr{instr.CreatePushSExpressionInstr(cellArr[0])}, 1, nil
 
 	//case "loop":
 	//	if 2 != cellArrLen {
@@ -133,7 +108,10 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr
 		var lineNum = nowStartLine
 		var addedRows = int64(0)
 		for i := int64(0); i < bodiesSize; i++ {
-			bodiesOpCodes, affectedOpCodeLine := _generateOpCode(bodies[i], lineNum)
+			bodiesOpCodes, affectedOpCodeLine, err := _generateOpCode(bodies[i], lineNum)
+			if err != nil {
+				return nil, 0, err
+			}
 			lineNum += affectedOpCodeLine
 			addedRows += affectedOpCodeLine
 			result = append(result, bodiesOpCodes...)
@@ -144,12 +122,12 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr
 				result = append(result, instr.CreatePopInstr())
 			}
 		}
-		return result, int64(len(result))
+		return result, int64(len(result)), nil
 	case "cond":
 		condAndBody, condAndBodySize := ToArraySexp(cellContent)
 
 		if 0 == condAndBodySize {
-			panic("Invalid syntax 3")
+			return nil, 0, errors.New("Invalid Syntax 3")
 		}
 
 		var opCodes = []instr.Instr{}
@@ -164,14 +142,22 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr
 			condAndBodyCellArr, _ := ToArraySexp(condAndBodyCell)
 
 			if 2 != len(condAndBodyCellArr) {
-				panic("Invalid syntax 3")
+				return nil, 0, errors.New("Invalid Syntax 4")
 			}
 			condSexp := condAndBodyCellArr[0]
 			bodySexp := condAndBodyCellArr[1]
 
-			condOpCodes, condAffectedCode := _generateOpCode(condSexp, nowLine)
+			condOpCodes, condAffectedCode, err := _generateOpCode(condSexp, nowLine)
 
-			bodyOpCodes, bodyAffectedCode := _generateOpCode(bodySexp, nowLine+condAffectedCode+1)
+			if err != nil {
+				return nil, 0, err
+			}
+
+			bodyOpCodes, bodyAffectedCode, err := _generateOpCode(bodySexp, nowLine+condAffectedCode+1)
+
+			if err != nil {
+				return nil, 0, err
+			}
 
 			opCodes = append(opCodes, make([]instr.Instr, condAffectedCode+bodyAffectedCode+2)...)
 
@@ -206,13 +192,13 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr
 			opCodes[lastIndexes[i]] = instr.CreateJmpInstr(nowLine)
 		}
 
-		return opCodes, int64(len(opCodes))
+		return opCodes, int64(len(opCodes)), nil
 
 	case "and":
 		cond, condLen := ToArraySexp(cellContent)
 
 		if 0 == condLen {
-			panic("Invalid syntax 3")
+			return nil, 0, errors.New("Invalid syntax 3")
 		}
 
 		var opCodes = []instr.Instr{}
@@ -220,7 +206,10 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr
 		affectedCode := nowStartLine
 
 		for i := int64(0); i < condLen; i++ {
-			condOpCodes, condAffectedCode := _generateOpCode(cond[i], affectedCode)
+			condOpCodes, condAffectedCode, err := _generateOpCode(cond[i], affectedCode)
+			if err != nil {
+				return nil, 0, err
+			}
 			affectedCode += condAffectedCode
 			opCodes = append(opCodes, condOpCodes...)
 		}
@@ -228,13 +217,13 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr
 		//opCodes = append(opCodes, reader.NewSymbol(fmt.Sprintf("and %d", condLen)))
 		opCodes = append(opCodes, instr.CreateAndInstr(condLen))
 
-		return opCodes, affectedCode - nowStartLine + 1
+		return opCodes, affectedCode - nowStartLine + 1, nil
 
 	case "or":
 		cond, condLen := ToArraySexp(cellContent)
 
 		if 0 == condLen {
-			panic("Invalid syntax 3")
+			return nil, 0, errors.New("Invalid syntax 3")
 		}
 
 		var opCodes = []instr.Instr{}
@@ -242,7 +231,10 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr
 		affectedCode := nowStartLine
 
 		for i := int64(0); i < condLen; i++ {
-			condOpCodes, condAffectedCode := _generateOpCode(cond[i], affectedCode)
+			condOpCodes, condAffectedCode, err := _generateOpCode(cond[i], affectedCode)
+			if err != nil {
+				return nil, 0, err
+			}
 			affectedCode += condAffectedCode
 			opCodes = append(opCodes, condOpCodes...)
 		}
@@ -250,46 +242,54 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr
 		//opCodes = append(opCodes, reader.NewSymbol(fmt.Sprintf("or %d", condLen)))
 		opCodes = append(opCodes, instr.CreateOrInstr(condLen))
 
-		return opCodes, affectedCode - nowStartLine + 1
+		return opCodes, affectedCode - nowStartLine + 1, nil
 
 	case "set":
 		if 2 != len(cellArr) {
-			panic("Invalid syntax 4")
+			return nil, 0, errors.New("Invalid syntax 4")
 		}
 		symbol := cellArr[0]
 		value := cellArr[1]
 
-		opCodes, affectedCode := _generateOpCode(value, nowStartLine)
+		opCodes, affectedCode, err := _generateOpCode(value, nowStartLine)
+
+		if err != nil {
+			return nil, 0, err
+		}
 
 		if symbol.SExpressionTypeId() != reader.SExpressionTypeSymbol {
-			panic("Invalid syntax 4")
+			return nil, 0, errors.New("Invalid syntax 4")
 		}
 
 		//opCodes = append(opCodes, reader.NewSymbol(fmt.Sprintf("set %s", symbol.(reader.Symbol).GetValue())))
 		opCodes = append(opCodes, instr.CreateSetInstr(symbol.(reader.Symbol).GetValue()))
 
-		return opCodes, affectedCode + 1
+		return opCodes, affectedCode + 1, nil
 	case "define":
 		if 2 != cellArrLen {
-			panic("Invalid syntax 4")
+			return nil, 0, errors.New("Invalid syntax 4")
 		}
 		symbol := cellArr[0]
 		value := cellArr[1]
 
-		opCodes, affectedCode := _generateOpCode(value, nowStartLine)
+		opCodes, affectedCode, err := _generateOpCode(value, nowStartLine)
+
+		if err != nil {
+			return nil, 0, err
+		}
 
 		if symbol.SExpressionTypeId() != reader.SExpressionTypeSymbol {
-			panic("Invalid syntax 4")
+			return nil, 0, errors.New("Invalid syntax 4")
 		}
 
 		//opCodes = append(opCodes, reader.NewSymbol(fmt.Sprintf("define %s", symbol.(reader.Symbol).GetValue())))
 		opCodes = append(opCodes, instr.CreateDefineInstr(symbol.(reader.Symbol).GetValue()))
 
-		return opCodes, affectedCode + 1
+		return opCodes, affectedCode + 1, nil
 
 	case "lambda":
 		if 2 != cellArrLen {
-			panic("Invalid syntax 5")
+			return nil, 0, errors.New("Invalid syntax 4")
 		}
 
 		//opCode := []reader.SExpression{reader.NewSymbol("new-env")}
@@ -313,7 +313,11 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr
 		createFuncOpCodeLine := opCodeLine
 		opCodeLine += 1
 
-		funcOpCode, funcOpCodeAffectLow := _generateOpCode(rawBody, 0)
+		funcOpCode, funcOpCodeAffectLow, err := _generateOpCode(rawBody, 0)
+		if err != nil {
+			return nil, 0, err
+		}
+
 		opCode = append(opCode, funcOpCode...)
 		opCodeLine += funcOpCodeAffectLow
 
@@ -323,11 +327,11 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr
 		//opCode = append(opCode, reader.NewSymbol("ret"))
 		opCode = append(opCode, instr.CreateRetInstr())
 
-		return opCode, opCodeLine - nowStartLine + 1 //+1 is return instr count
+		return opCode, opCodeLine - nowStartLine + 1, nil //+1 is return instr count
 
 	case "loop":
 		if 2 != cellArrLen {
-			panic("Invalid syntax 6")
+			return nil, 0, errors.New("Invalid syntax 4")
 		}
 
 		cond := cellArr[0]
@@ -336,8 +340,15 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr
 		//cond|jmp-else|body|jmp|...
 
 		startIndex := nowStartLine
-		condOpCode, condAffectedCode := _generateOpCode(cond, nowStartLine)
-		bodyOpCode, bodyAffectedCode := _generateOpCode(body, nowStartLine+condAffectedCode+1)
+		condOpCode, condAffectedCode, err := _generateOpCode(cond, nowStartLine)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		bodyOpCode, bodyAffectedCode, err := _generateOpCode(body, nowStartLine+condAffectedCode+1)
+		if err != nil {
+			return nil, 0, err
+		}
 
 		//opCode := append(condOpCode, reader.NewSymbol(fmt.Sprintf("jmp-else-dummy %d", nowStartLine+condAffectedCode+1+bodyAffectedCode)))
 		opCode := append(condOpCode, instr.CreateDummyInstr())
@@ -351,7 +362,7 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr
 		//opCode[dummyIndex] = reader.NewSymbol(fmt.Sprintf("jmp-else %d", nowStartLine+condAffectedCode+1+bodyAffectedCode+1))
 		opCode[dummyIndex] = instr.CreateJmpElseInstr(nowStartLine + condAffectedCode + 1 + bodyAffectedCode + 1)
 
-		return opCode, condAffectedCode + 1 + bodyAffectedCode + 1
+		return opCode, condAffectedCode + 1 + bodyAffectedCode + 1, nil
 	}
 
 	//if reader.IsEmptyList(cell.GetCdr()) {
@@ -364,7 +375,11 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr
 	var cdrOpCode []instr.Instr
 	affectedCdrOpeCodeRowCount := nowStartLine
 	for i := int64(0); i < argsLen; i++ {
-		argsOpCode, argsOpCodeAffectedRowCount := _generateOpCode(args[i], affectedCdrOpeCodeRowCount)
+		argsOpCode, argsOpCodeAffectedRowCount, err := _generateOpCode(args[i], affectedCdrOpeCodeRowCount)
+		if err != nil {
+			return nil, 0, err
+		}
+
 		cdrOpCode = append(cdrOpCode, argsOpCode...)
 		affectedCdrOpeCodeRowCount += argsOpCodeAffectedRowCount
 	}
@@ -382,12 +397,16 @@ func _generateOpCode(sexp reader.SExpression, nowStartLine int64) ([]instr.Instr
 
 		carAffectedCode = 1
 		cdrAffectedCode := affectedCdrOpeCodeRowCount - nowStartLine
-		return append(cdrOpCode, carOpCode...), carAffectedCode + cdrAffectedCode
+		return append(cdrOpCode, carOpCode...), carAffectedCode + cdrAffectedCode, nil
 	} else {
-		carOpCode, carAffectedCode = _generateOpCode(cell.GetCar(), affectedCdrOpeCodeRowCount)
+		var err error
+		carOpCode, carAffectedCode, err = _generateOpCode(cell.GetCar(), affectedCdrOpeCodeRowCount)
+		if err != nil {
+			return nil, 0, err
+		}
 		cdrAffectedCode := affectedCdrOpeCodeRowCount - nowStartLine
 
 		//return append(append(cdrOpCode, carOpCode...), reader.NewSymbol(fmt.Sprintf("call %d", argsLen))), carAffectedCode + cdrAffectedCode + 1
-		return append(append(cdrOpCode, carOpCode...), instr.CreateCallInstr(argsLen)), carAffectedCode + cdrAffectedCode + 1
+		return append(append(cdrOpCode, carOpCode...), instr.CreateCallInstr(argsLen)), carAffectedCode + cdrAffectedCode + 1, nil
 	}
 }

@@ -3,9 +3,12 @@ package vm
 import (
 	"fmt"
 	"github.com/google/uuid"
+	"os"
+	"strings"
 	"sync"
 	"testrand-vm/instr"
 	"testrand-vm/reader"
+	"time"
 )
 
 type Env struct {
@@ -110,7 +113,6 @@ func VMRun(vm *Closure) {
 
 		//rawCode := selfVm.Code[selfVm.Pc].(reader.Symbol).GetValue()
 		code := selfVm.Code[selfVm.Pc]
-
 		//switch opCodeAndArgs[0] {
 		switch code.Type {
 		case instr.OPCODE_PUSH_NIL:
@@ -429,7 +431,7 @@ func VMRun(vm *Closure) {
 		case instr.OPCODE_DIVIDE_NUM:
 			argLen := instr.DeserializeDivideNumInstr(code)
 			sum := int64(1)
-			for i := int64(1); i < argLen-1; i++ {
+			for i := int64(0); i < argLen-1; i++ {
 				sum *= selfVm.Pop().(reader.Number).GetValue()
 			}
 			if sum == 0 {
@@ -611,6 +613,11 @@ func VMRun(vm *Closure) {
 			selfVm.Push(reader.NewNativeArray(nil))
 			selfVm.Pc++
 		case instr.OPCODE_ARRAY_GET:
+			arrArgSize := instr.DeserializeArrayGetInstr(code)
+			if arrArgSize != 2 {
+				fmt.Println("array get arg size is not 2")
+				goto ESCAPE
+			}
 			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNumber {
 				fmt.Println("index is not number")
 				goto ESCAPE
@@ -666,9 +673,21 @@ func VMRun(vm *Closure) {
 			selfVm.Push(target)
 			selfVm.Pc++
 		case instr.OPCODE_NEW_MAP:
-			selfVm.Push(reader.NewNativeHashmap(nil))
+			selfVm.Push(reader.NewNativeHashmap(map[string]reader.SExpression{}))
 			selfVm.Pc++
 		case instr.OPCODE_MAP_GET:
+			arrArgSize := instr.DeserializeMapGetInstr(code)
+
+			if arrArgSize != 2 && arrArgSize != 3 {
+				fmt.Println("map get arg size is not 2 or 3")
+				goto ESCAPE
+			}
+
+			var defaultVal reader.SExpression = reader.NewNil()
+			if arrArgSize == 3 {
+				defaultVal = selfVm.Pop()
+			}
+
 			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeString {
 				fmt.Println("key is not string")
 				goto ESCAPE
@@ -679,7 +698,14 @@ func VMRun(vm *Closure) {
 				goto ESCAPE
 			}
 			target := selfVm.Pop().(*reader.NativeHashMap)
-			selfVm.Push(target.Get(key.(reader.Str).GetValue()))
+
+			val, ok := target.Get(key.(reader.Str).GetValue())
+			if !ok {
+				selfVm.Push(defaultVal)
+			} else {
+				selfVm.Push(val)
+			}
+
 			selfVm.Pc++
 		case instr.OPCODE_MAP_SET:
 			val := selfVm.Pop()
@@ -726,13 +752,136 @@ func VMRun(vm *Closure) {
 			target.Delete(key.(reader.Str).GetValue())
 			selfVm.Push(target)
 			selfVm.Pc++
+
+		case instr.OPCODE_HEAVY:
+			argsLen := instr.DeserializeHeavyInstr(code)
+			if argsLen <= 0 || argsLen > 2 {
+				fmt.Println("invalid heavy instr")
+				goto ESCAPE
+			}
+			if argsLen == 2 {
+				callBackRaw := selfVm.Pop()
+				if callBackRaw.SExpressionTypeId() != reader.SExpressionTypeClosure {
+					fmt.Println("not a closure")
+					goto ESCAPE
+				}
+				callBack := callBackRaw.(*Closure)
+				sendBody := selfVm.Pop()
+				//send to heavy
+				GetSupervisor().AddTaskTaskWithCallback(sendBody, callBack)
+			}
+			if argsLen == 1 {
+				sendBody := selfVm.Pop()
+				//send to heavy
+				GetSupervisor().AddTask(sendBody)
+			}
+			selfVm.Push(reader.NewString("somethin-uuid"))
+			selfVm.Pc++
+		case instr.OPCODE_STRING_SPLIT:
+
+			argsLen := instr.DeserializeStringSplitInstr(code)
+
+			if argsLen != 2 {
+				fmt.Println("invalid string split instr")
+				goto ESCAPE
+			}
+
+			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeString {
+				fmt.Println("not a string")
+				goto ESCAPE
+			}
+
+			sep := selfVm.Pop().(reader.Str).GetValue()
+
+			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeString {
+				fmt.Println("not a string")
+				goto ESCAPE
+			}
+
+			target := selfVm.Pop().(reader.Str).GetValue()
+
+			splitted := strings.Split(target, sep)
+
+			var convArr []reader.SExpression = make([]reader.SExpression, len(splitted))
+
+			for i := 0; i < len(splitted); i++ {
+				convArr[i] = reader.NewString(splitted[i])
+			}
+
+			arr := reader.NewNativeArray(convArr)
+
+			selfVm.Push(arr)
+			selfVm.Pc++
+		case instr.OPCODE_STRING_JOIN:
+			argsLen := instr.DeserializeStringJoinInstr(code)
+
+			if argsLen != 2 {
+				fmt.Println("invalid string join instr")
+				goto ESCAPE
+			}
+
+			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeString {
+				fmt.Println("not a string")
+				goto ESCAPE
+			}
+
+			sep := selfVm.Pop().(reader.Str).GetValue()
+
+			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNativeArray {
+				fmt.Println("not an array")
+				goto ESCAPE
+			}
+
+			target := selfVm.Pop().(*reader.NativeArray)
+			conv := make([]string, target.Length())
+
+			for i := int64(0); i < target.Length(); i++ {
+				conv[i] = target.Get(i).(reader.Str).GetValue()
+			}
+
+			joined := strings.Join(conv, sep)
+
+			selfVm.Push(reader.NewString(joined))
+			selfVm.Pc++
+		case instr.OPCODE_GET_NOW_TIME_NANO:
+			selfVm.Push(reader.NewInt(time.Now().UnixNano()))
+			selfVm.Pc++
+		case instr.OPCODE_READ_FILE:
+			pathRaw := selfVm.Pop()
+			if pathRaw.SExpressionTypeId() != reader.SExpressionTypeString {
+				fmt.Println("not a string")
+				goto ESCAPE
+			}
+			filePath := pathRaw.(reader.Str).GetValue()
+
+			file, err := os.Open(filePath)
+			if err != nil {
+				fmt.Println(err)
+				goto ESCAPE
+			}
+			defer file.Close()
+
+			//read file content
+			fileInfo, err := file.Stat()
+			if err != nil {
+				fmt.Println(err)
+				goto ESCAPE
+			}
+			fileSize := fileInfo.Size()
+			fileContent := make([]byte, fileSize)
+			_, err = file.Read(fileContent)
+			if err != nil {
+				fmt.Println("file read err: ", err)
+				goto ESCAPE
+			}
+			selfVm.Push(reader.NewString(string(fileContent)))
+			selfVm.Pc++
 		}
 	}
 ESCAPE:
 	{
 		for {
 			selfVm.Stack = []reader.SExpression{}
-			selfVm.Code = []instr.Instr{}
 			selfVm.Pc = 0
 			if selfVm.ReturnCont == nil {
 				break

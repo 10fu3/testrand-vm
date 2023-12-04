@@ -1,0 +1,11 @@
+(begin
+(define foreach-array (lambda (array handler) (begin
+    (define i 0)
+    (loop (< i (array-len array)) (begin
+    (handler (array-get array i))
+    (set i (+ i 1))
+    #nil
+    ))
+)))
+)
+

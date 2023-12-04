@@ -123,6 +123,12 @@ func (i Instr) String() string {
 		return fmt.Sprintf("Instr{Type: MAP_KEYS}")
 	case OPCODE_MAP_DELETE:
 		return fmt.Sprintf("Instr{Type: MAP_DELETE}")
+	case OPCODE_STRING_JOIN:
+		return fmt.Sprintf("Instr{Type: STRING_JOIN}")
+	case OPCODE_STRING_SPLIT:
+		return fmt.Sprintf("Instr{Type: STRING_SPLIT}")
+	case OPCODE_READ_FILE:
+		return fmt.Sprintf("Instr{Type: READ_FILE}")
 	case OPCODE_END_CODE:
 		return "Instr{Type: END_CODE}"
 	case OPCODE_NOP:
@@ -394,50 +400,81 @@ func CreateMapSetInstr(argsSize int64) Instr {
 
 func CreateMapLengthInstr(argsSize int64) Instr {
 	b := make([]byte, 8)
-	binary.LittleEndian.PutUint64(b, uint64(argsSize*2))
+	binary.LittleEndian.PutUint64(b, uint64(argsSize))
 	return NewInstr(OPCODE_MAP_LENGTH, b)
 }
 
 func CreateMapKeysInstr(argsSize int64) Instr {
 	b := make([]byte, 8)
-	binary.LittleEndian.PutUint64(b, uint64(argsSize*2))
+	binary.LittleEndian.PutUint64(b, uint64(argsSize))
 	return NewInstr(OPCODE_MAP_KEYS, b)
 }
 
 func CreateMapDeleteInstr(argsSize int64) Instr {
 	b := make([]byte, 8)
-	binary.LittleEndian.PutUint64(b, uint64(argsSize*2))
+	binary.LittleEndian.PutUint64(b, uint64(argsSize))
 	return NewInstr(OPCODE_MAP_DELETE, b)
 }
 
+func CreateHeavyTaskInstr(argsSize int64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, uint64(argsSize))
+	return NewInstr(OPCODE_HEAVY, b)
+}
+
+func CreateReadFileInstr(argsSize int64) Instr {
+	return NewInstr(OPCODE_READ_FILE, []byte{})
+}
+
+func CreateStringSplit(instrSize int64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, uint64(instrSize))
+	return NewInstr(OPCODE_STRING_SPLIT, b)
+}
+
+func CreateStringJoin(instrSize int64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, uint64(instrSize))
+	return NewInstr(OPCODE_STRING_JOIN, b)
+}
+
+func CreateGetTimeNanos(instrSize int64) Instr {
+	return NewInstr(OPCODE_GET_NOW_TIME_NANO, []byte{})
+}
+
 var NativeFuncNameToOpCodeMap = map[string]FunctionGenerateInstr{
-	"print":      CreatePrintInstr,
-	"println":    CreatePrintlnInstr,
-	"+":          CreatePlusNumInstr,
-	"-":          CreateMinusNumInstr,
-	"*":          CreateMultiplyNumInstr,
-	"/":          CreateDivideNumInstr,
-	"%":          CreateModuloNumInstr,
-	"=":          CreateEqualNumInstr,
-	"!=":         CreateNotEqualNumInstr,
-	">":          CreateGreaterThanNumInstr,
-	">=":         CreateGreaterThanOrEqualNumInstr,
-	"<":          CreateLessThanNumInstr,
-	"<=":         CreateLessThanOrEqualNumInstr,
-	"car":        CreateCarInstr,
-	"cdr":        CreateCdrInstr,
-	"random-id":  CreateRandomIdInstr,
-	"array":      CreateNewArrayInstr,
-	"array-get":  CreateArrayGetInstr,
-	"array-set":  CreateArraySetInstr,
-	"array-len":  CreateArrayLengthInstr,
-	"array-push": CreateArrayPushInstr,
-	"map":        CreateNewMapInstr,
-	"map-get":    CreateMapGetInstr,
-	"map-set":    CreateMapSetInstr,
-	"map-len":    CreateMapLengthInstr,
-	"map-keys":   CreateMapKeysInstr,
-	"map-delete": CreateMapDeleteInstr,
+	"print":          CreatePrintInstr,
+	"println":        CreatePrintlnInstr,
+	"+":              CreatePlusNumInstr,
+	"-":              CreateMinusNumInstr,
+	"*":              CreateMultiplyNumInstr,
+	"/":              CreateDivideNumInstr,
+	"%":              CreateModuloNumInstr,
+	"=":              CreateEqualNumInstr,
+	"!=":             CreateNotEqualNumInstr,
+	">":              CreateGreaterThanNumInstr,
+	">=":             CreateGreaterThanOrEqualNumInstr,
+	"<":              CreateLessThanNumInstr,
+	"<=":             CreateLessThanOrEqualNumInstr,
+	"car":            CreateCarInstr,
+	"cdr":            CreateCdrInstr,
+	"random-id":      CreateRandomIdInstr,
+	"array":          CreateNewArrayInstr,
+	"array-get":      CreateArrayGetInstr,
+	"array-set":      CreateArraySetInstr,
+	"array-len":      CreateArrayLengthInstr,
+	"array-push":     CreateArrayPushInstr,
+	"hashmap":        CreateNewMapInstr,
+	"hashmap-get":    CreateMapGetInstr,
+	"hashmap-set":    CreateMapSetInstr,
+	"hashmap-len":    CreateMapLengthInstr,
+	"hashmap-keys":   CreateMapKeysInstr,
+	"hashmap-delete": CreateMapDeleteInstr,
+	"heavy":          CreateHeavyTaskInstr,
+	"read-file":      CreateReadFileInstr,
+	"string-split":   CreateStringSplit,
+	"string-join":    CreateStringJoin,
+	"get-time-nano":  CreateGetTimeNanos,
 }
 
 func CreateEndCodeInstr() Instr {
@@ -659,5 +696,29 @@ func DeserializeMapLengthInstr(data Instr) int64 {
 }
 
 func DeserializeMapKeysInstr(data Instr) int64 {
+	return int64(binary.LittleEndian.Uint64(data.Data))
+}
+
+func DeserializeHeavyInstr(data Instr) int64 {
+	return int64(binary.LittleEndian.Uint64(data.Data))
+}
+
+func DeserializeReadFileInstr(data Instr) int64 {
+	return int64(binary.LittleEndian.Uint64(data.Data))
+}
+
+func DeserializeStringSplitInstr(data Instr) int64 {
+	return int64(binary.LittleEndian.Uint64(data.Data))
+}
+
+func DeserializeStringJoinInstr(data Instr) int64 {
+	return int64(binary.LittleEndian.Uint64(data.Data))
+}
+
+func DeserializeArrayForEachInstr(data Instr) int64 {
+	return int64(binary.LittleEndian.Uint64(data.Data))
+}
+
+func DeserializeGetTimeNano(data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }

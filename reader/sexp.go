@@ -483,8 +483,11 @@ func (h *NativeHashMap) Equals(sexp SExpression) bool {
 	return h == sexp.(*NativeHashMap)
 }
 
-func (h *NativeHashMap) Get(key string) SExpression {
-	return h.elements[key]
+func (h *NativeHashMap) Get(key string) (SExpression, bool) {
+	if val, ok := h.elements[key]; ok {
+		return val, true
+	}
+	return nil, false
 }
 
 func (h *NativeHashMap) Set(key string, value SExpression) {

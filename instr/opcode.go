@@ -51,6 +51,11 @@ const (
 	OPCODE_MAP_DELETE
 	OPCODE_END_CODE
 	OPCODE_NOP
+	OPCODE_HEAVY
+	OPCODE_READ_FILE
+	OPCODE_STRING_SPLIT
+	OPCODE_STRING_JOIN
+	OPCODE_GET_NOW_TIME_NANO
 )
 
 var OpCodeMap = map[uint8]string{
@@ -104,36 +109,9 @@ var OpCodeMap = map[uint8]string{
 	OPCODE_MAP_DELETE:                "MAP_DELETE",
 	OPCODE_END_CODE:                  "END_CODE",
 	OPCODE_NOP:                       "NOP",
-}
-
-func GetNativeFuncNameToOpCodeMap() map[string]uint8 {
-	return map[string]uint8{
-		"print":        OPCODE_PRINT,
-		"println":      OPCODE_PRINTLN,
-		"+":            OPCODE_PLUS_NUM,
-		"-":            OPCODE_MINUS_NUM,
-		"*":            OPCODE_MULTIPLY_NUM,
-		"/":            OPCODE_DIVIDE_NUM,
-		"%":            OPCODE_MODULO_NUM,
-		"=":            OPCODE_EQUAL_NUM,
-		"!=":           OPCODE_NOT_EQUAL_NUM,
-		">":            OPCODE_GREATER_THAN_NUM,
-		">=":           OPCODE_GREATER_THAN_OR_EQUAL_NUM,
-		"<":            OPCODE_LESS_THAN_NUM,
-		"<=":           OPCODE_LESS_THAN_OR_EQUAL_NUM,
-		"car":          OPCODE_CAR,
-		"cdr":          OPCODE_CDR,
-		"random-id":    OPCODE_RANDOM_ID,
-		"array":        OPCODE_NEW_ARRAY,
-		"array-get":    OPCODE_ARRAY_GET,
-		"array-set":    OPCODE_ARRAY_SET,
-		"array-length": OPCODE_ARRAY_LENGTH,
-		"array-push":   OPCODE_ARRAY_PUSH,
-		"map":          OPCODE_NEW_MAP,
-		"map-get":      OPCODE_MAP_GET,
-		"map-set":      OPCODE_MAP_SET,
-		"map-length":   OPCODE_MAP_LENGTH,
-		"map-keys":     OPCODE_MAP_KEYS,
-		"map-delete":   OPCODE_MAP_DELETE,
-	}
+	OPCODE_HEAVY:                     "HEAVY",
+	OPCODE_READ_FILE:                 "READ_FILE",
+	OPCODE_STRING_SPLIT:              "STRING_SPLIT",
+	OPCODE_STRING_JOIN:               "STRING_JOIN",
+	OPCODE_GET_NOW_TIME_NANO:         "GET_NOW_TIME_NANO",
 }
