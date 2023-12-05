@@ -5,15 +5,14 @@ import (
 	"fmt"
 	"os"
 	"testrand-vm/compile"
-	eval "testrand-vm/reader"
 	"testrand-vm/vm"
 )
 
 func main() {
 	stdin := bufio.NewReader(os.Stdin)
-	read := eval.NewReader(stdin)
-
-	machine := vm.NewVM()
+	compileEnv := compile.NewCompileEnvironment()
+	read := compile.NewReader(compileEnv, stdin)
+	runner := vm.NewVM(compileEnv)
 
 	{
 		//load file
@@ -22,40 +21,30 @@ func main() {
 			panic(err)
 		}
 		defer file.Close()
-		r := eval.NewReader(bufio.NewReader(file))
+		r := compile.NewReader(compileEnv, bufio.NewReader(file))
 		libSexp, err := r.Read()
 		if err != nil {
 			panic(err)
 		}
-		libStack, _, err := compile.GenerateOpCode(libSexp, machine.Pc)
-		if err != nil {
-			panic(err)
+		if libCompileErr := compileEnv.Compile(libSexp); libCompileErr != nil {
+			fmt.Println(libCompileErr)
+			os.Exit(1)
 		}
-		machine.AddCode(libStack)
-		vm.VMRun(machine)
+		vm.VMRunFromEntryPoint(runner)
 	}
 
 	for {
-		machine.Code = nil
 		sexp, err := read.Read()
 		if err != nil {
 			break
 		}
-		//stack, stacklen := compile.GenerateOpCode(sexp, machine.Pc)
-		stack, _, err := compile.GenerateOpCode(sexp, machine.Pc)
 
-		if err != nil {
-			fmt.Println(err)
+		runtimeErr := compileEnv.Compile(sexp)
+
+		if runtimeErr != nil {
+			fmt.Println("Runtime Error: ", runtimeErr)
 			continue
 		}
-
-		machine.AddCode(stack)
-
-		for i := 0; i < len(stack); i++ {
-			fmt.Println(i, stack[i])
-		}
-
-		vm.VMRun(machine)
-		//fmt.Println("pc:", machine.Pc, "len:", stacklen)
+		vm.VMRunFromEntryPoint(runner)
 	}
 }

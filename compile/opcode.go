@@ -1,4 +1,4 @@
-package instr
+package compile
 
 const (
 	OPCODE_PUSH_SYM = uint8(iota)

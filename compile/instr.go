@@ -1,11 +1,10 @@
-package instr
+package compile
 
 import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
 	"strings"
-	"testrand-vm/reader"
 )
 
 // instruction data structure
@@ -21,119 +20,6 @@ type Instr struct {
 }
 
 func (i Instr) String() string {
-	switch i.Type {
-	case OPCODE_POP:
-		return "Instr{Type: POP}"
-	case OPCODE_PUSH_NUM:
-		return fmt.Sprintf("Instr{Type: PUSH_NUM, Data: %d}", DeserializePushNumberInstr(i))
-	case OPCODE_PUSH_STR:
-		return fmt.Sprintf("Instr{Type: PUSH_STR, Data: %s}", DeserializePushStringInstr(i))
-	case OPCODE_PUSH_SYM:
-		return fmt.Sprintf("Instr{Type: PUSH_SYM, Data: %s}", DeserializePushSymbolInstr(i))
-	case OPCODE_PUSH_TRUE:
-		return "Instr{Type: PUSH_TRUE}"
-	case OPCODE_PUSH_FALSE:
-		return "Instr{Type: PUSH_FALSE}"
-	case OPCODE_PUSH_NIL:
-		return "Instr{Type: PUSH_NIL}"
-	case OPCODE_PUSH_SEXP:
-		sexp, err := DeserializeSexpressionInstr(i)
-		if err != nil {
-			panic(err)
-		}
-		return fmt.Sprintf("Instr{Type: PUSH_SEXP, Data: %s}", sexp)
-	case OPCODE_JMP:
-		return fmt.Sprintf("Instr{Type: JMP, Data: %d}", DeserializeJmpInstr(i))
-	case OPCODE_JMP_IF:
-		return fmt.Sprintf("Instr{Type: JMP_IF, Data: %d}", DeserializeJmpIfInstr(i))
-	case OPCODE_JMP_ELSE:
-		return fmt.Sprintf("Instr{Type: JMP_ELSE, Data: %d}", DeserializeJmpElseInstr(i))
-	case OPCODE_LOAD:
-		return "Instr{Type: LOAD}"
-	case OPCODE_DEFINE:
-		return fmt.Sprintf("Instr{Type: DEFINE, Data: %s}", DeserializeDefineInstr(i))
-	case OPCODE_DEFINE_ARGS:
-		return fmt.Sprintf("Instr{Type: DEFINE_ARGS, Data: %s}", DeserializeDefineArgsInstr(i))
-	case OPCODE_SET:
-		return fmt.Sprintf("Instr{Type: SET, Data: %s}", DeserializeSetInstr(i))
-	case OPCODE_NEW_ENV:
-		return "Instr{Type: NEW_ENV}"
-	case OPCODE_CREATE_CLOSURE:
-		varslen, funcOpAffectedCode := DeserializeCreateClosureInstr(i)
-		return fmt.Sprintf("Instr{Type: CREATE_CLOSURE, Data: %d, %d}", varslen, funcOpAffectedCode)
-	case OPCODE_CALL:
-		return fmt.Sprintf("Instr{Type: CALL, Data: %d}", DeserializeCallInstr(i))
-	case OPCODE_RETURN:
-		return "Instr{Type: RETURN}"
-	case OPCODE_AND:
-		return fmt.Sprintf("Instr{Type: AND, ArgsSize: %d}", DeserializeAndInstr(i))
-	case OPCODE_OR:
-		return fmt.Sprintf("Instr{Type: OR, ArgsSize: %d}", DeserializeOrInstr(i))
-	case OPCODE_PRINT:
-		return fmt.Sprintf("Instr{Type: PRINT, ArgsSize: %d}", DeserializePrintInstr(i))
-	case OPCODE_PRINTLN:
-		return fmt.Sprintf("Instr{Type: PRINTLN, ArgsSize: %d}", DeserializePrintlnInstr(i))
-	case OPCODE_PLUS_NUM:
-		return fmt.Sprintf("Instr{Type: PLUS_NUM, ArgsSize: %d}", DeserializePlusNumInstr(i))
-	case OPCODE_MINUS_NUM:
-		return fmt.Sprintf("Instr{Type: MINUS_NUM, ArgsSize: %d}", DeserializeMinusNumInstr(i))
-	case OPCODE_MULTIPLY_NUM:
-		return fmt.Sprintf("Instr{Type: MULTIPLY_NUM, ArgsSize: %d}", DeserializeMultiplyNumInstr(i))
-	case OPCODE_DIVIDE_NUM:
-		return fmt.Sprintf("Instr{Type: DIVIDE_NUM, ArgsSize: %d}", DeserializeDivideNumInstr(i))
-	case OPCODE_MODULO_NUM:
-		return fmt.Sprintf("Instr{Type: MODULO_NUM, ArgsSize: %d}", DeserializeModuloNumInstr(i))
-	case OPCODE_EQUAL_NUM:
-		return fmt.Sprintf("Instr{Type: EQUAL_NUM, ArgsSize: %d}", DeserializeEqualNumInstr(i))
-	case OPCODE_NOT_EQUAL_NUM:
-		return fmt.Sprintf("Instr{Type: NOT_EQUAL_NUM, ArgsSize: %d}", DeserializeNotEqualNumInstr(i))
-	case OPCODE_GREATER_THAN_NUM:
-		return fmt.Sprintf("Instr{Type: GREATER_THAN_NUM, ArgsSize: %d}", DeserializeGreaterThanNumInstr(i))
-	case OPCODE_GREATER_THAN_OR_EQUAL_NUM:
-		return fmt.Sprintf("Instr{Type: GREATER_THAN_OR_EQUAL_NUM, ArgsSize: %d}", DeserializeGreaterThanOrEqualNumInstr(i))
-	case OPCODE_LESS_THAN_NUM:
-		return fmt.Sprintf("Instr{Type: LESS_THAN_NUM, ArgsSize: %d}", DeserializeLessThanNumInstr(i))
-	case OPCODE_LESS_THAN_OR_EQUAL_NUM:
-		return fmt.Sprintf("Instr{Type: LESS_THAN_OR_EQUAL_NUM, ArgsSize: %d}", DeserializeLessThanOrEqualNumInstr(i))
-	case OPCODE_CAR:
-		return "Instr{Type: CAR}"
-	case OPCODE_CDR:
-		return "Instr{Type: CDR}"
-	case OPCODE_RANDOM_ID:
-		return "Instr{Type: RANDOM_ID}"
-	case OPCODE_NEW_ARRAY:
-		return "Instr{Type: NEW_ARRAY}"
-	case OPCODE_ARRAY_GET:
-		return fmt.Sprintf("Instr{Type: ARRAY_GET}")
-	case OPCODE_ARRAY_SET:
-		return fmt.Sprintf("Instr{Type: ARRAY_SET}")
-	case OPCODE_ARRAY_LENGTH:
-		return fmt.Sprintf("Instr{Type: ARRAY_LENGTH}")
-	case OPCODE_ARRAY_PUSH:
-		return fmt.Sprintf("Instr{Type: ARRAY_PUSH}")
-	case OPCODE_NEW_MAP:
-		return fmt.Sprintf("Instr{Type: NEW_MAP}")
-	case OPCODE_MAP_GET:
-		return fmt.Sprintf("Instr{Type: MAP_GET}")
-	case OPCODE_MAP_SET:
-		return fmt.Sprintf("Instr{Type: MAP_SET}")
-	case OPCODE_MAP_LENGTH:
-		return fmt.Sprintf("Instr{Type: MAP_LENGTH}")
-	case OPCODE_MAP_KEYS:
-		return fmt.Sprintf("Instr{Type: MAP_KEYS}")
-	case OPCODE_MAP_DELETE:
-		return fmt.Sprintf("Instr{Type: MAP_DELETE}")
-	case OPCODE_STRING_JOIN:
-		return fmt.Sprintf("Instr{Type: STRING_JOIN}")
-	case OPCODE_STRING_SPLIT:
-		return fmt.Sprintf("Instr{Type: STRING_SPLIT}")
-	case OPCODE_READ_FILE:
-		return fmt.Sprintf("Instr{Type: READ_FILE}")
-	case OPCODE_END_CODE:
-		return "Instr{Type: END_CODE}"
-	case OPCODE_NOP:
-		return "Instr{Type: NOP}"
-	}
 	return fmt.Sprintf("Instr{Length: %d, Type: %s, Data: %s}", i.Length, OpCodeMap[i.Type], string(i.Data))
 }
 
@@ -155,12 +41,16 @@ func CreatePushNumberInstr(number int64) Instr {
 	return NewInstr(OPCODE_PUSH_NUM, b)
 }
 
-func CreatePushStringInstr(str string) Instr {
-	return NewInstr(OPCODE_PUSH_STR, []byte(str))
+func CreatePushStringInstr(symbolIndex uint64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, symbolIndex)
+	return NewInstr(OPCODE_PUSH_STR, b)
 }
 
-func CreatePushSymbolInstr(symbol string) Instr {
-	return NewInstr(OPCODE_PUSH_SYM, []byte(symbol))
+func CreatePushSymbolInstr(symbolIndex uint64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, symbolIndex)
+	return NewInstr(OPCODE_PUSH_SYM, b)
 }
 
 func CreatePushBoolInstr(boolean bool) Instr {
@@ -175,8 +65,10 @@ func CreatePushNilInstr() Instr {
 	return NewInstr(OPCODE_PUSH_NIL, []byte{})
 }
 
-func CreatePushSExpressionInstr(sexp reader.SExpression) Instr {
-	return NewInstr(OPCODE_PUSH_SEXP, []byte(fmt.Sprintf("%s\n", sexp)))
+func CreatePushSExpressionInstr(symbolIndex uint64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, symbolIndex)
+	return NewInstr(OPCODE_PUSH_SEXP, b)
 }
 
 func CreateJmpInstr(jmpTo int64) Instr {
@@ -201,12 +93,16 @@ func CreateLoadInstr() Instr {
 	return NewInstr(OPCODE_LOAD, []byte{})
 }
 
-func CreateDefineInstr(symbol string) Instr {
-	return NewInstr(OPCODE_DEFINE, []byte(symbol))
+func CreateDefineInstr(symbolIndex uint64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, symbolIndex)
+	return NewInstr(OPCODE_DEFINE, b)
 }
 
-func CreateDefineArgsInstr(symbol string) Instr {
-	return NewInstr(OPCODE_DEFINE_ARGS, []byte(symbol))
+func CreateDefineArgsInstr(symbolIndex uint64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, symbolIndex)
+	return NewInstr(OPCODE_DEFINE_ARGS, b)
 }
 
 func CreateDummyInstr() Instr {
@@ -224,8 +120,10 @@ func CreateRetInstr() Instr {
 	return NewInstr(OPCODE_RETURN, []byte{})
 }
 
-func CreateSetInstr(symbol string) Instr {
-	return NewInstr(OPCODE_SET, []byte(symbol))
+func CreateSetInstr(symbolIndex uint64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, symbolIndex)
+	return NewInstr(OPCODE_SET, b)
 }
 
 func CreateNewEnvInstr() Instr {
@@ -523,7 +421,7 @@ func Serialize(instr []Instr) []byte {
 	return data
 }
 
-func Deserialize(data []byte) []Instr {
+func DeserializeInstructions(data []byte) []Instr {
 	instrLen := binary.LittleEndian.Uint64(data[0:8])
 	instr := make([]Instr, instrLen)
 	offset := uint64(8)
@@ -541,22 +439,24 @@ func Deserialize(data []byte) []Instr {
 	return instr
 }
 
-func DeserializePushNumberInstr(data Instr) int64 {
+func DeserializePushNumberInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializePushStringInstr(data Instr) string {
-	return string(data.Data)
+func DeserializePushStringInstr(compEnv *CompilerEnvironment, data Instr) Str {
+	index := binary.LittleEndian.Uint64(data.Data)
+	return NewString(index)
 }
 
-func DeserializePushSymbolInstr(data Instr) reader.Symbol {
-	return reader.NewSymbol(string(data.Data))
+func DeserializePushSymbolInstr(data Instr) Symbol {
+	return NewSymbol(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeSexpressionInstr(data Instr) (reader.SExpression, error) {
-	sample := strings.NewReader(string(data.Data))
+func DeserializeSexpressionInstr(compEnv *CompilerEnvironment, data Instr) (SExpression, error) {
+	index := binary.LittleEndian.Uint64(data.Data)
+	sample := strings.NewReader(fmt.Sprintf("%s\n", compEnv.GetCompilerSymbolString(index)))
 	r := bufio.NewReader(sample)
-	sexp, err := reader.NewReader(r).Read()
+	sexp, err := NewReader(compEnv, r).Read()
 
 	if err != nil {
 		return nil, err
@@ -565,160 +465,160 @@ func DeserializeSexpressionInstr(data Instr) (reader.SExpression, error) {
 	return sexp, nil
 }
 
-func DeserializeJmpInstr(data Instr) int64 {
+func DeserializeJmpInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeJmpIfInstr(data Instr) int64 {
+func DeserializeJmpIfInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeJmpElseInstr(data Instr) int64 {
+func DeserializeJmpElseInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeDefineInstr(data Instr) string {
-	return string(data.Data)
+func DeserializeDefineInstr(compEnv *CompilerEnvironment, data Instr) uint64 {
+	return binary.LittleEndian.Uint64(data.Data)
 }
 
-func DeserializeDefineArgsInstr(data Instr) string {
-	return string(data.Data)
+func DeserializeDefineArgsInstr(compEnv *CompilerEnvironment, data Instr) uint64 {
+	return binary.LittleEndian.Uint64(data.Data)
 }
 
-func DeserializeCreateClosureInstr(data Instr) (int64, int64) {
+func DeserializeCreateClosureInstr(compEnv *CompilerEnvironment, data Instr) (int64, int64) {
 	varslen := int64(binary.LittleEndian.Uint64(data.Data))
 	funcOpAffectedCode := int64(binary.LittleEndian.Uint64(data.Data[8:]))
 	return varslen, funcOpAffectedCode
 }
 
-func DeserializeSetInstr(data Instr) string {
-	return string(data.Data)
+func DeserializeSetInstr(compEnv *CompilerEnvironment, data Instr) uint64 {
+	return binary.LittleEndian.Uint64(data.Data)
 }
 
-func DeserializeCallInstr(data Instr) int64 {
+func DeserializeCallInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeAndInstr(data Instr) int64 {
+func DeserializeAndInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeOrInstr(data Instr) int64 {
+func DeserializeOrInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializePrintInstr(data Instr) int64 {
+func DeserializePrintInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializePrintlnInstr(data Instr) int64 {
+func DeserializePrintlnInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializePlusNumInstr(data Instr) int64 {
+func DeserializePlusNumInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeMinusNumInstr(data Instr) int64 {
+func DeserializeMinusNumInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeMultiplyNumInstr(data Instr) int64 {
+func DeserializeMultiplyNumInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeDivideNumInstr(data Instr) int64 {
+func DeserializeDivideNumInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeModuloNumInstr(data Instr) int64 {
+func DeserializeModuloNumInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeEqualNumInstr(data Instr) int64 {
+func DeserializeEqualNumInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeNotEqualNumInstr(data Instr) int64 {
+func DeserializeNotEqualNumInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeGreaterThanNumInstr(data Instr) int64 {
+func DeserializeGreaterThanNumInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeGreaterThanOrEqualNumInstr(data Instr) int64 {
+func DeserializeGreaterThanOrEqualNumInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeLessThanNumInstr(data Instr) int64 {
+func DeserializeLessThanNumInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeLessThanOrEqualNumInstr(data Instr) int64 {
+func DeserializeLessThanOrEqualNumInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeNewArrayInstr(data Instr) int64 {
+func DeserializeNewArrayInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeArrayGetInstr(data Instr) int64 {
+func DeserializeArrayGetInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeArraySetInstr(data Instr) int64 {
+func DeserializeArraySetInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeArrayLengthInstr(data Instr) int64 {
+func DeserializeArrayLengthInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeArrayPushInstr(data Instr) int64 {
+func DeserializeArrayPushInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeNewMapInstr(data Instr) int64 {
+func DeserializeNewMapInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeMapGetInstr(data Instr) int64 {
+func DeserializeMapGetInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeMapSetInstr(data Instr) int64 {
+func DeserializeMapSetInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeMapLengthInstr(data Instr) int64 {
+func DeserializeMapLengthInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeMapKeysInstr(data Instr) int64 {
+func DeserializeMapKeysInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeHeavyInstr(data Instr) int64 {
+func DeserializeHeavyInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeReadFileInstr(data Instr) int64 {
+func DeserializeReadFileInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeStringSplitInstr(data Instr) int64 {
+func DeserializeStringSplitInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeStringJoinInstr(data Instr) int64 {
+func DeserializeStringJoinInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeArrayForEachInstr(data Instr) int64 {
+func DeserializeArrayForEachInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeGetTimeNano(data Instr) int64 {
+func DeserializeGetTimeNano(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
