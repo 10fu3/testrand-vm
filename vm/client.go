@@ -3,7 +3,7 @@ package vm
 import (
 	"github.com/google/uuid"
 	"sync"
-	"testrand-vm/reader"
+	"testrand-vm/compile"
 )
 
 func NewSupervisor() *Supervisor {
@@ -31,7 +31,7 @@ type Supervisor struct {
 @return: タスクID
 */
 
-func (s *Supervisor) AddTaskTaskWithCallback(sendTask reader.SExpression, onComplete *Closure) TaskId {
+func (s *Supervisor) AddTaskTaskWithCallback(sendTask compile.SExpression, onComplete *Closure) TaskId {
 	s.Mutex.Lock()
 	defer s.Mutex.Unlock()
 	taskId := TaskId(uuid.NewString())
@@ -39,12 +39,13 @@ func (s *Supervisor) AddTaskTaskWithCallback(sendTask reader.SExpression, onComp
 	return taskId
 }
 
-/**
+/*
+*
 @sendTask: 送信するタスク
 @onComplete: タスクが完了した時に呼び出す関数
 @return: タスクID
 */
-func (s *Supervisor) AddGroupTasks(sendTask []reader.SExpression, onComplete *Closure) GroupTaskId {
+func (s *Supervisor) AddGroupTasks(sendTask []compile.SExpression, onComplete *Closure) GroupTaskId {
 	s.Mutex.Lock()
 	defer s.Mutex.Unlock()
 	groupId := GroupTaskId(uuid.NewString())
@@ -59,14 +60,15 @@ func (s *Supervisor) AddGroupTasks(sendTask []reader.SExpression, onComplete *Cl
 	return groupId
 }
 
-func (s *Supervisor) AddTask(sendTask reader.SExpression) TaskId {
+func (s *Supervisor) AddTask(sendTask compile.SExpression) TaskId {
 	s.Mutex.Lock()
 	defer s.Mutex.Unlock()
 	taskId := TaskId(uuid.NewString())
 	return taskId
 }
 
-/**
+/*
+*
 @taskId: タスクID
 */
 func (s *Supervisor) CompleteTask(taskId string) {

@@ -1,11 +1,10 @@
-package lexer
+package compile
 
 import (
 	"bufio"
 	"errors"
 	"fmt"
 	"strconv"
-	"testrand-vm/reader/token"
 )
 
 const WHITESPACE_AT_EOL rune = ' '
@@ -42,7 +41,7 @@ type lexer struct {
 }
 
 type Lexer interface {
-	GetNextToken() (token.Token, error)
+	GetNextToken() (Token, error)
 }
 
 func New(in *bufio.Reader) Lexer {
@@ -70,7 +69,7 @@ func (l *lexer) updateNextChar() error {
 	return nil
 }
 
-func (l *lexer) GetNextToken() (token.Token, error) {
+func (l *lexer) GetNextToken() (Token, error) {
 	r := l.nextRune
 	for isWhiteSpaceRune(r) {
 		if err := l.updateNextChar(); err != nil {
@@ -82,19 +81,19 @@ func (l *lexer) GetNextToken() (token.Token, error) {
 		if err := l.updateNextChar(); err != nil {
 			return nil, err
 		}
-		return token.NewTokenByKind(token.TokenKindLparen), nil
+		return NewTokenByKind(TokenKindLparen), nil
 	}
 	if r == ')' {
 		if err := l.updateNextChar(); err != nil {
 			return nil, err
 		}
-		return token.NewTokenByKind(token.TokenKindRPAREN), nil
+		return NewTokenByKind(TokenKindRPAREN), nil
 	}
 	if r == '.' {
 		if err := l.updateNextChar(); err != nil {
 			return nil, err
 		}
-		return token.NewTokenByKind(token.TokenKindDot), nil
+		return NewTokenByKind(TokenKindDot), nil
 	}
 	if r == '#' {
 		temp := make([]rune, 1)
@@ -113,11 +112,11 @@ func (l *lexer) GetNextToken() (token.Token, error) {
 		temporarySymbol := string(temp)
 		switch temporarySymbol {
 		case "#t":
-			return token.NewTokenByBool(true), nil
+			return NewTokenByBool(true), nil
 		case "#f":
-			return token.NewTokenByBool(false), nil
+			return NewTokenByBool(false), nil
 		case "#nil":
-			return token.NewTokenByNil(), nil
+			return NewTokenByNil(), nil
 		}
 		return nil, errors.New("invalid # constant")
 	}
@@ -125,13 +124,13 @@ func (l *lexer) GetNextToken() (token.Token, error) {
 		if err := l.updateNextChar(); err != nil {
 			return nil, err
 		}
-		return token.NewTokenByKind(token.TokenKindQuote), nil
+		return NewTokenByKind(TokenKindQuote), nil
 	}
 	if r == '`' {
 		if err := l.updateNextChar(); err != nil {
 			return nil, err
 		}
-		return token.NewTokenByKind(token.TokenKindQuasiquote), nil
+		return NewTokenByKind(TokenKindQuasiquote), nil
 	}
 	if r == ',' {
 		if err := l.updateNextChar(); err != nil {
@@ -142,9 +141,9 @@ func (l *lexer) GetNextToken() (token.Token, error) {
 			if err := l.updateNextChar(); err != nil {
 				return nil, err
 			}
-			return token.NewTokenByKind(token.TokenKindUnquoteSplicing), nil
+			return NewTokenByKind(TokenKindUnquoteSplicing), nil
 		}
-		return token.NewTokenByKind(token.TokenKindUnquote), nil
+		return NewTokenByKind(TokenKindUnquote), nil
 	}
 	if isSymbolChar(r) {
 		isBeginWithDigit := isDigit(r)
@@ -159,16 +158,16 @@ func (l *lexer) GetNextToken() (token.Token, error) {
 		symbolSequence := string(temp)
 		parseInt, err := strconv.ParseInt(symbolSequence, 10, 64)
 		if err == nil {
-			return token.NewTokenByInt(parseInt), nil
+			return NewTokenByInt(parseInt), nil
 		}
 		parseFloat, err := strconv.ParseFloat(symbolSequence, 64)
 		if err == nil {
-			return token.NewTokenByFloat(parseFloat), nil
+			return NewTokenByFloat(parseFloat), nil
 		}
 		if isBeginWithDigit {
 			return nil, errors.New(fmt.Sprintf("unexpected word: %s", symbolSequence))
 		}
-		return token.NewTokenBySymbol(symbolSequence), nil
+		return NewTokenBySymbol(symbolSequence), nil
 	}
 	if r == '"' {
 		if err := l.updateNextChar(); err != nil {
@@ -186,7 +185,7 @@ func (l *lexer) GetNextToken() (token.Token, error) {
 		if err := l.updateNextChar(); err != nil {
 			return nil, err
 		}
-		return token.NewTokenByString(string(temp)), nil
+		return NewTokenByString(string(temp)), nil
 	}
 	if err := l.updateNextChar(); err != nil {
 		return nil, err

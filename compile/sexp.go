@@ -1,122 +1,89 @@
-package reader
+package compile
 
 import (
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 type SExpression interface {
 	TypeId() string
 	SExpressionTypeId() SExpressionType
-	String() string
+	String(compEnv *CompilerEnvironment) string
 	IsList() bool
 	Equals(sexp SExpression) bool
 }
 
-type Symbol interface {
-	SExpression
-	GetValue() string
-}
+type Symbol uint64
 
-type symbol struct {
-	name string
-}
-
-func (s *symbol) SExpressionTypeId() SExpressionType {
+func (s Symbol) SExpressionTypeId() SExpressionType {
 	return SExpressionTypeSymbol
 }
 
-func (s *symbol) TypeId() string {
+func (s Symbol) TypeId() string {
 	return "symbol"
 }
 
-func (s *symbol) IsList() bool {
+func (s Symbol) IsList() bool {
 	return false
 }
 
-func (s *symbol) String() string {
-	return s.name
+func (s Symbol) String(compEnv *CompilerEnvironment) string {
+	return compEnv.GetCompilerSymbolString(uint64(s))
 }
 
-func (s *symbol) Equals(sexp SExpression) bool {
-	if sexp.TypeId() != "symbol" {
+func (s Symbol) Equals(sexp SExpression) bool {
+	if sexp.SExpressionTypeId() != SExpressionTypeSymbol {
 		return false
 	}
-	return s.name == (sexp).(Symbol).GetValue()
+	return s == (sexp).(Symbol)
 }
 
-func (s *symbol) GetValue() string {
-	return s.name
+func (s Symbol) GetSymbolIndex() uint64 {
+	return uint64(s)
 }
 
-var internedSymbols = make(map[string]Symbol)
-var internedSymbolRWLock = sync.RWMutex{}
-
-func NewSymbol(sym string) Symbol {
-	internedSymbolRWLock.RLock()
-	if interned, ok := internedSymbols[sym]; ok {
-		internedSymbolRWLock.RUnlock()
-		return interned
-	}
-	internedSymbolRWLock.RUnlock()
-	internedSymbolRWLock.Lock()
-	defer internedSymbolRWLock.Unlock()
-	newSymbol := &symbol{name: sym}
-	internedSymbols[sym] = newSymbol
-	return newSymbol
+func NewSymbol(symNum uint64) Symbol {
+	return Symbol(symNum)
 }
 
-type _int int64
-
-func (i _int) GetValue() int64 {
+func (i Number) GetValue() int64 {
 	return int64(i)
 }
 
-func (i _int) String() string {
+func (i Number) String(compEnv *CompilerEnvironment) string {
 	return strconv.FormatInt(int64(i), 10)
 }
 
-func (i _int) SExpressionTypeId() SExpressionType {
+func (i Number) SExpressionTypeId() SExpressionType {
 	return SExpressionTypeNumber
 }
 
-func (i _int) TypeId() string {
+func (i Number) TypeId() string {
 	return "number"
 }
 
-func (i _int) IsList() bool {
+func (i Number) IsList() bool {
 	return false
 }
 
-func (i _int) Equals(sexp SExpression) bool {
-	if "number" != sexp.TypeId() {
+func (i Number) Equals(sexp SExpression) bool {
+	if sexp.SExpressionTypeId() != SExpressionTypeNumber {
 		return false
 	}
-	return i.GetValue() == sexp.(Number).GetValue()
+	return i == sexp.(Number)
 }
 
-type Number interface {
-	GetValue() int64
-	String() string
-	SExpression
-}
+type Number int64
 
 func NewInt(val int64) Number {
-	return _int(val)
+	return Number(val)
 }
 
-type Bool interface {
-	GetValue() bool
-	String() string
-	SExpression
-}
+type Bool bool
 
-type _bool bool
-
-func (b _bool) Equals(sexp SExpression) bool {
+func (b Bool) Equals(sexp SExpression) bool {
 	if b.SExpressionTypeId() != sexp.SExpressionTypeId() {
 		return false
 	}
@@ -124,69 +91,67 @@ func (b _bool) Equals(sexp SExpression) bool {
 	return b == sexp.(Bool)
 }
 
-func (b _bool) GetValue() bool {
+func (b Bool) GetValue() bool {
 	return bool(b)
 }
 
-func (b _bool) String() string {
+func (b Bool) String(compEnv *CompilerEnvironment) string {
 	if b {
 		return "#t"
 	}
 	return "#f"
 }
 
-func (b _bool) TypeId() string {
+func (b Bool) TypeId() string {
 	return "bool"
 }
 
-func (b _bool) SExpressionTypeId() SExpressionType {
+func (b Bool) SExpressionTypeId() SExpressionType {
 	return SExpressionTypeBool
 }
 
-func (b _bool) IsList() bool {
+func (b Bool) IsList() bool {
 	return false
 }
 
 func NewBool(b bool) Bool {
-	return _bool(b)
+	return Bool(b)
 }
 
-type Str interface {
-	GetValue() string
-	String() string
-	SExpression
+type Str uint64
+
+func NewString(s uint64) Str {
+	return Str(s)
 }
 
-type _string string
-
-func NewString(s string) Str {
-	return _string(s)
-}
-
-func (s _string) Equals(sexp SExpression) bool {
-	if "string" != sexp.TypeId() {
+func (s Str) Equals(sexp SExpression) bool {
+	if sexp.SExpressionTypeId() != SExpressionTypeString {
 		return false
 	}
 	return s == sexp.(Str)
 }
 
-func (s _string) GetValue() string {
-	return string(s)
+func (s Str) GetValue(compEnv *CompilerEnvironment) string {
+	return compEnv.GetCompilerSymbolString(uint64(s))
 }
 
-func (s _string) String() string {
-	return fmt.Sprintf("\"%s\"", string(s))
+func (s Str) GetSymbolIndex() uint64 {
+	return uint64(s)
 }
 
-func (s _string) TypeId() string {
+func (s Str) String(compEnv *CompilerEnvironment) string {
+	return fmt.Sprintf("\"%s\"", compEnv.GetCompilerSymbolString(uint64(s)))
+}
+
+func (s Str) TypeId() string {
 	return "string"
 }
 
-func (s _string) SExpressionTypeId() SExpressionType {
+func (s Str) SExpressionTypeId() SExpressionType {
 	return SExpressionTypeString
 }
 
-func (s _string) IsList() bool {
+func (s Str) IsList() bool {
 	return false
 }
 
@@ -209,7 +174,7 @@ func (n *_nil) SExpressionTypeId() SExpressionType {
 	return SExpressionTypeNil
 }
 
-func (n *_nil) String() string {
+func (n *_nil) String(compEnv *CompilerEnvironment) string {
 	return "#nil"
 }
 
@@ -230,8 +195,9 @@ type ConsCell interface {
 }
 
 type _cons_cell struct {
-	Car SExpression
-	Cdr SExpression
+	Car     SExpression
+	Cdr     SExpression
+	compEnv *CompilerEnvironment
 }
 
 func (cell *_cons_cell) Equals(sexp SExpression) bool {
@@ -252,7 +218,7 @@ func NewConsCell(car SExpression, cdr SExpression) ConsCell {
 	}
 }
 
-func JoinList(left, right SExpression) (ConsCell, error) {
+func JoinList(compEnv *CompilerEnvironment, left, right SExpression) (ConsCell, error) {
 
 	if !left.IsList() {
 		return nil, errors.New("left is not a list")
@@ -293,9 +259,9 @@ func (cell *_cons_cell) SExpressionTypeId() SExpressionType {
 	return SExpressionTypeConsCell
 }
 
-func (cell *_cons_cell) String() string {
-	if "symbol" == cell.Car.TypeId() && "quote" == ((cell.Car).(Symbol)).GetValue() && cell.Cdr.TypeId() == "cons_cell" && "nil" == ((cell.Cdr).(ConsCell)).GetCdr().TypeId() {
-		return fmt.Sprintf("'%s", ((cell.Cdr).(ConsCell)).GetCar().String())
+func (cell *_cons_cell) String(compEnv *CompilerEnvironment) string {
+	if "symbol" == cell.Car.TypeId() && cell.compEnv.GetCompilerSymbol("quote") == ((cell.Car).(Symbol)).GetSymbolIndex() && cell.Cdr.TypeId() == "cons_cell" && "nil" == ((cell.Cdr).(ConsCell)).GetCdr().TypeId() {
+		return fmt.Sprintf("'%s", ((cell.Cdr).(ConsCell)).GetCar().String(compEnv))
 	}
 	var joinedString strings.Builder
 	joinedString.WriteString("(")
@@ -303,7 +269,7 @@ func (cell *_cons_cell) String() string {
 
 	for {
 		if lookCell.GetCar().TypeId() != "nil" {
-			joinedString.WriteString(lookCell.GetCar().String())
+			joinedString.WriteString(lookCell.GetCar().String(compEnv))
 			if lookCell.GetCdr().TypeId() == "cons_cell" {
 				if lookCell.GetCdr().(ConsCell).GetCar().TypeId() != "nil" && lookCell.GetCdr().(ConsCell).GetCdr().TypeId() != "nil" {
 					joinedString.WriteString(" ")
@@ -313,7 +279,7 @@ func (cell *_cons_cell) String() string {
 
 		if lookCell.GetCdr().TypeId() != "cons_cell" {
 			if lookCell.GetCdr().TypeId() != "nil" {
-				joinedString.WriteString(" . " + lookCell.GetCdr().String())
+				joinedString.WriteString(" . " + lookCell.GetCdr().String(compEnv))
 			}
 			joinedString.WriteString(")")
 			break
@@ -323,23 +289,23 @@ func (cell *_cons_cell) String() string {
 	return joinedString.String()
 }
 
-func ToArray(sexp SExpression) ([]SExpression, error) {
-	list := make([]SExpression, 0)
-	look := sexp
-
-	for !IsEmptyList(look) {
-		if "cons_cell" != look.TypeId() {
-			return nil, errors.New("need list")
-		}
-		if look.(ConsCell).GetCdr().TypeId() != "cons_cell" {
-			list = append(list, NewConsCell(look.(ConsCell).GetCar(), look.(ConsCell).GetCdr()))
-			return list, nil
-		}
-		list = append(list, look.(ConsCell).GetCar())
-		look = look.(ConsCell).GetCdr()
-	}
-	return list, nil
-}
+//func ToArray(sexp SExpression) ([]SExpression, error) {
+//	list := make([]SExpression, 0)
+//	look := sexp
+//
+//	for !IsEmptyList(look) {
+//		if "cons_cell" != look.TypeId() {
+//			return nil, errors.New("need list")
+//		}
+//		if look.(ConsCell).GetCdr().TypeId() != "cons_cell" {
+//			list = append(list, NewConsCell(look.(ConsCell).GetCar(), look.(ConsCell).GetCdr()))
+//			return list, nil
+//		}
+//		list = append(list, look.(ConsCell).GetCar())
+//		look = look.(ConsCell).GetCdr()
+//	}
+//	return list, nil
+//}
 
 func (cell *_cons_cell) IsList() bool {
 	if "cons_cell" == cell.Cdr.TypeId() {
@@ -359,22 +325,22 @@ func (cell *_cons_cell) GetCdr() SExpression {
 	return cell.Cdr
 }
 
-func ToConsCell(list []SExpression) ConsCell {
-	var head = (NewConsCell(NewNil(), NewNil())).(*_cons_cell)
-	var look = head
-	var beforeLook *_cons_cell = nil
-
-	for _, sexp := range list {
-		look.Car = sexp
-		look.Cdr = NewConsCell(NewNil(), NewNil())
-		beforeLook = look
-		look = (look.Cdr).(*_cons_cell)
-	}
-	if beforeLook != nil {
-		beforeLook.Cdr = NewConsCell(NewNil(), NewNil())
-	}
-	return head
-}
+//func ToConsCell(list []SExpression) ConsCell {
+//	var head = (NewConsCell(NewNil(), NewNil())).(*_cons_cell)
+//	var look = head
+//	var beforeLook *_cons_cell = nil
+//
+//	for _, sexp := range list {
+//		look.Car = sexp
+//		look.Cdr = NewConsCell(NewNil(), NewNil())
+//		beforeLook = look
+//		look = (look.Cdr).(*_cons_cell)
+//	}
+//	if beforeLook != nil {
+//		beforeLook.Cdr = NewConsCell(NewNil(), NewNil())
+//	}
+//	return head
+//}
 
 func IsEmptyList(list SExpression) bool {
 	if "cons_cell" != list.TypeId() {
@@ -387,6 +353,7 @@ func IsEmptyList(list SExpression) bool {
 
 type NativeArray struct {
 	elements []SExpression
+	compEnv  *CompilerEnvironment
 }
 
 func (a *NativeArray) TypeId() string {
@@ -397,7 +364,7 @@ func (a *NativeArray) SExpressionTypeId() SExpressionType {
 	return SExpressionTypeNativeArray
 }
 
-func (a *NativeArray) String() string {
+func (a *NativeArray) String(compEnv *CompilerEnvironment) string {
 	var joinedString strings.Builder
 	joinedString.WriteString("[")
 	for i, elm := range a.elements {
@@ -441,12 +408,13 @@ func (a *NativeArray) Push(value SExpression) {
 	a.elements = append(a.elements, value)
 }
 
-func NewNativeArray(elements []SExpression) *NativeArray {
-	return &NativeArray{elements: elements}
+func NewNativeArray(compEnv *CompilerEnvironment, elements []SExpression) *NativeArray {
+	return &NativeArray{elements: elements, compEnv: compEnv}
 }
 
 type NativeHashMap struct {
-	elements map[string]SExpression
+	elements map[uint64]SExpression
+	compEnv  *CompilerEnvironment
 }
 
 func (h *NativeHashMap) TypeId() string {
@@ -457,7 +425,7 @@ func (h *NativeHashMap) SExpressionTypeId() SExpressionType {
 	return SExpressionTypeNativeHashmap
 }
 
-func (h *NativeHashMap) String() string {
+func (h *NativeHashMap) String(compEnv *CompilerEnvironment) string {
 	var joinedString strings.Builder
 	joinedString.WriteString("{\n")
 	i := 0
@@ -483,14 +451,14 @@ func (h *NativeHashMap) Equals(sexp SExpression) bool {
 	return h == sexp.(*NativeHashMap)
 }
 
-func (h *NativeHashMap) Get(key string) (SExpression, bool) {
+func (h *NativeHashMap) Get(key uint64) (SExpression, bool) {
 	if val, ok := h.elements[key]; ok {
 		return val, true
 	}
 	return nil, false
 }
 
-func (h *NativeHashMap) Set(key string, value SExpression) {
+func (h *NativeHashMap) Set(key uint64, value SExpression) {
 	h.elements[key] = value
 }
 
@@ -498,22 +466,22 @@ func (h *NativeHashMap) Length() int64 {
 	return int64(len(h.elements))
 }
 
-func (h *NativeHashMap) Delete(key string) {
+func (h *NativeHashMap) Delete(key uint64) {
 	delete(h.elements, key)
 }
 
-func (h *NativeHashMap) Keys() []SExpression {
-	keys := make([]SExpression, len(h.elements))
-	i := 0
-	for k := range h.elements {
-		keys[i] = NewString(k)
-		i++
-	}
-	return keys
-}
+//func (h *NativeHashMap) Keys() []SExpression {
+//	keys := make([]SExpression, len(h.elements))
+//	i := 0
+//	for k := range h.elements {
+//		keys[i] = NewString(h.compEnv, k)
+//		i++
+//	}
+//	return keys
+//}
 
-func NewNativeHashmap(elements map[string]SExpression) *NativeHashMap {
-	return &NativeHashMap{elements: elements}
+func NewNativeHashmap(compEnv *CompilerEnvironment, elements map[uint64]SExpression) *NativeHashMap {
+	return &NativeHashMap{elements: elements, compEnv: compEnv}
 }
 
 type SExpressionType int

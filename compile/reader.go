@@ -1,15 +1,14 @@
-package reader
+package compile
 
 import (
 	"bufio"
 	"errors"
-	"testrand-vm/reader/lexer"
-	"testrand-vm/reader/token"
 )
 
 type reader struct {
-	lexer.Lexer
-	token.Token
+	compEnv *CompilerEnvironment
+	Lexer
+	Token
 	nestingLevel int
 }
 
@@ -18,10 +17,10 @@ type Reader interface {
 }
 
 func (r *reader) getCdr() (SExpression, error) {
-	if r.Token.GetKind() == token.TokenKindRPAREN {
+	if r.Token.GetKind() == TokenKindRPAREN {
 		return NewConsCell(NewNil(), NewNil()), nil
 	}
-	if r.Token.GetKind() == token.TokenKindDot {
+	if r.Token.GetKind() == TokenKindDot {
 		nextToken, err := r.Lexer.GetNextToken()
 		if err != nil {
 			return nil, err
@@ -42,7 +41,7 @@ func (r *reader) getCdr() (SExpression, error) {
 }
 
 func (r *reader) sExpression() (SExpression, error) {
-	if r.Token.GetKind() == token.TokenKindNumber {
+	if r.Token.GetKind() == TokenKindNumber {
 		value := r.GetInt()
 		if r.nestingLevel != 0 {
 			nextToken, err := r.GetNextToken()
@@ -54,7 +53,7 @@ func (r *reader) sExpression() (SExpression, error) {
 		return NewInt(value), nil
 	}
 
-	if r.Token.GetKind() == token.TokenKindString {
+	if r.Token.GetKind() == TokenKindString {
 		value := r.GetString()
 		if r.nestingLevel != 0 {
 			nextToken, err := r.GetNextToken()
@@ -63,10 +62,11 @@ func (r *reader) sExpression() (SExpression, error) {
 			}
 			r.Token = nextToken
 		}
-		return NewString(value), nil
+		symbolIndex := r.compEnv.GetCompilerSymbol(value)
+		return NewString(symbolIndex), nil
 	}
 
-	if r.Token.GetKind() == token.TokenKindSymbol {
+	if r.Token.GetKind() == TokenKindSymbol {
 		value := r.GetSymbol()
 		if r.nestingLevel != 0 {
 			nextToken, err := r.GetNextToken()
@@ -75,9 +75,10 @@ func (r *reader) sExpression() (SExpression, error) {
 			}
 			r.Token = nextToken
 		}
-		return NewSymbol(value), nil
+		symbolIndex := r.compEnv.GetCompilerSymbol(value)
+		return NewSymbol(symbolIndex), nil
 	}
-	if r.Token.GetKind() == token.TokenKindBoolean {
+	if r.Token.GetKind() == TokenKindBoolean {
 		value := r.GetBool()
 		if r.nestingLevel != 0 {
 			nextToken, err := r.GetNextToken()
@@ -88,7 +89,7 @@ func (r *reader) sExpression() (SExpression, error) {
 		}
 		return NewBool(value), nil
 	}
-	if r.Token.GetKind() == token.TokenKindNil {
+	if r.Token.GetKind() == TokenKindNil {
 		if r.nestingLevel != 0 {
 			nextToken, err := r.GetNextToken()
 			if err != nil {
@@ -98,7 +99,7 @@ func (r *reader) sExpression() (SExpression, error) {
 		}
 		return NewNil(), nil
 	}
-	if r.Token.GetKind() == token.TokenKindQuote {
+	if r.Token.GetKind() == TokenKindQuote {
 		nextToken, err := r.GetNextToken()
 		if err != nil {
 			return nil, err
@@ -108,10 +109,11 @@ func (r *reader) sExpression() (SExpression, error) {
 		if err != nil {
 			return nil, err
 		}
-		return NewConsCell(NewSymbol("quote"), NewConsCell(sexp, NewConsCell(NewNil(), NewNil()))), nil
+		symbolIndex := r.compEnv.GetCompilerSymbol("quote")
+		return NewConsCell(NewSymbol(symbolIndex), NewConsCell(sexp, NewConsCell(NewNil(), NewNil()))), nil
 	}
 
-	if r.Token.GetKind() == token.TokenKindUnquote {
+	if r.Token.GetKind() == TokenKindUnquote {
 		nextToken, err := r.GetNextToken()
 		if err != nil {
 			return nil, err
@@ -122,10 +124,11 @@ func (r *reader) sExpression() (SExpression, error) {
 		if err != nil {
 			return nil, err
 		}
-		return NewConsCell(NewSymbol("unquote"), NewConsCell(sexp, NewConsCell(NewNil(), NewNil()))), nil
+		symbolIndex := r.compEnv.GetCompilerSymbol("unquote")
+		return NewConsCell(NewSymbol(symbolIndex), NewConsCell(sexp, NewConsCell(NewNil(), NewNil()))), nil
 	}
 
-	if r.Token.GetKind() == token.TokenKindUnquoteSplicing {
+	if r.Token.GetKind() == TokenKindUnquoteSplicing {
 		nextToken, err := r.GetNextToken()
 		if err != nil {
 			return nil, err
@@ -135,10 +138,11 @@ func (r *reader) sExpression() (SExpression, error) {
 		if err != nil {
 			return nil, err
 		}
-		return NewConsCell(NewSymbol("unquote-splicing"), NewConsCell(sexp, NewConsCell(NewNil(), NewNil()))), nil
+		symbolIndex := r.compEnv.GetCompilerSymbol("unquote-splicing")
+		return NewConsCell(NewSymbol(symbolIndex), NewConsCell(sexp, NewConsCell(NewNil(), NewNil()))), nil
 	}
 
-	if r.Token.GetKind() == token.TokenKindQuasiquote {
+	if r.Token.GetKind() == TokenKindQuasiquote {
 		nextToken, err := r.GetNextToken()
 		if err != nil {
 			return nil, err
@@ -148,16 +152,17 @@ func (r *reader) sExpression() (SExpression, error) {
 		if err != nil {
 			return nil, err
 		}
-		return NewConsCell(NewSymbol("quasiquote"), NewConsCell(sexp, NewConsCell(NewNil(), NewNil()))), nil
+		symbolIndex := r.compEnv.GetCompilerSymbol("quasiquote")
+		return NewConsCell(NewSymbol(symbolIndex), NewConsCell(sexp, NewConsCell(NewNil(), NewNil()))), nil
 	}
-	if r.Token.GetKind() == token.TokenKindLparen {
+	if r.Token.GetKind() == TokenKindLparen {
 		r.nestingLevel += 1
 		nextToken, err := r.Lexer.GetNextToken()
 		if err != nil {
 			return nil, err
 		}
 		r.Token = nextToken
-		if r.Token.GetKind() == token.TokenKindRPAREN {
+		if r.Token.GetKind() == TokenKindRPAREN {
 			r.nestingLevel -= 1
 			if r.nestingLevel != 0 {
 				nextToken, err = r.Lexer.GetNextToken()
@@ -199,10 +204,11 @@ func (r *reader) Read() (SExpression, error) {
 	return r.sExpression()
 }
 
-func NewReader(in *bufio.Reader) Reader {
+func NewReader(compEnv *CompilerEnvironment, in *bufio.Reader) Reader {
 	return &reader{
-		Lexer:        lexer.New(in),
+		Lexer:        New(in),
 		Token:        nil,
 		nestingLevel: 0,
+		compEnv:      compEnv,
 	}
 }

@@ -6,24 +6,23 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"testrand-vm/instr"
-	"testrand-vm/reader"
+	"testrand-vm/compile"
 	"time"
 )
 
 type Env struct {
-	Frame map[string]*reader.SExpression
+	Frame map[uint64]*compile.SExpression
 }
 
 func (e *Env) TypeId() string {
 	return "environment"
 }
 
-func (e *Env) SExpressionTypeId() reader.SExpressionType {
-	return reader.SExpressionTypeEnvironment
+func (e *Env) SExpressionTypeId() compile.SExpressionType {
+	return compile.SExpressionTypeEnvironment
 }
 
-func (e *Env) String() string {
+func (e *Env) String(env *compile.CompilerEnvironment) string {
 	return "environment"
 }
 
@@ -31,31 +30,73 @@ func (e *Env) IsList() bool {
 	return false
 }
 
-func (e *Env) Equals(sexp reader.SExpression) bool {
+func (e *Env) Equals(sexp compile.SExpression) bool {
 	panic("implement me")
 }
 
 type Closure struct {
+	CompilerEnv   *compile.CompilerEnvironment
 	Mutex         *sync.RWMutex
-	Stack         []reader.SExpression
-	Code          []instr.Instr
+	Stack         *SexpStack
+	Code          []compile.Instr
 	Pc            int64
 	Env           *Env
 	Cont          *Closure
 	ReturnCont    *Closure
 	ReturnPc      int64
-	TemporaryArgs []reader.Symbol
+	TemporaryArgs []compile.Symbol
+}
+
+type SexpStack struct {
+	stack []compile.SExpression
+	Size  int
+}
+
+func (stk *SexpStack) Push(data compile.SExpression) {
+
+	if stk.Size < len(stk.stack) {
+		stk.stack[stk.Size] = data
+		stk.Size++
+		return
+	}
+
+	stk.stack = append(stk.stack, data)
+	stk.Size++
+}
+
+func (stk *SexpStack) Pop() compile.SExpression {
+	if stk.Size == 0 {
+		return nil
+	}
+
+	r := stk.stack[stk.Size-1]
+	stk.stack[stk.Size-1] = nil
+
+	stk.Size--
+	return r
+}
+
+func (stk *SexpStack) Peek() compile.SExpression {
+	if stk.Size == 0 {
+		return nil
+	}
+	return stk.stack[stk.Size-1]
+}
+
+func NewSexpStack() *SexpStack {
+	stk := new(SexpStack)
+	return stk
 }
 
 func (vm *Closure) TypeId() string {
 	return "closure"
 }
 
-func (vm *Closure) SExpressionTypeId() reader.SExpressionType {
-	return reader.SExpressionTypeClosure
+func (vm *Closure) SExpressionTypeId() compile.SExpressionType {
+	return compile.SExpressionTypeClosure
 }
 
-func (vm *Closure) String() string {
+func (vm *Closure) String(compEnv *compile.CompilerEnvironment) string {
 	return "closure"
 }
 
@@ -63,46 +104,27 @@ func (vm *Closure) IsList() bool {
 	return false
 }
 
-func (vm *Closure) Clone() *Closure {
-
-	//stack clone
-	stack := make([]reader.SExpression, len(vm.Stack))
-	for i, v := range vm.Stack {
-		stack[i] = v
-	}
-
-	//code clone
-	code := make([]instr.Instr, len(vm.Code))
-	for i, v := range vm.Code {
-		code[i] = v
-	}
-
-	return &Closure{
-		Mutex:         &sync.RWMutex{},
-		Stack:         stack,
-		Code:          code,
-		Pc:            vm.Pc,
-		Env:           vm.Env,
-		Cont:          vm.Cont,
-		ReturnCont:    vm.ReturnCont,
-		ReturnPc:      vm.ReturnPc,
-		TemporaryArgs: vm.TemporaryArgs,
-	}
-}
-
-func (vm *Closure) Equals(sexp reader.SExpression) bool {
+func (vm *Closure) Equals(sexp compile.SExpression) bool {
 	//TODO implement me
 	panic("implement me")
 }
 
-func NewVM() *Closure {
+func NewVM(compEnv *compile.CompilerEnvironment) *Closure {
 	return &Closure{
-		Stack: make([]reader.SExpression, 0),
-		Pc:    0,
-		Env:   &Env{Frame: make(map[string]*reader.SExpression)},
-		Cont:  nil,
-		Mutex: &sync.RWMutex{},
+		CompilerEnv: compEnv,
+		Stack:       NewSexpStack(),
+		Pc:          0,
+		Env:         &Env{Frame: make(map[uint64]*compile.SExpression)},
+		Cont:        nil,
+		Mutex:       &sync.RWMutex{},
 	}
+}
+
+func VMRunFromEntryPoint(vm *Closure) {
+	vm.Pc = 0
+	vm.Code = vm.CompilerEnv.GetInstr()
+	VMRun(vm)
+	vm.Code = nil
 }
 
 func VMRun(vm *Closure) {
@@ -111,127 +133,121 @@ func VMRun(vm *Closure) {
 
 	for {
 
-		//rawCode := selfVm.Code[selfVm.Pc].(reader.Symbol).GetValue()
+		//rawCode := selfVm.Code[selfVm.Pc].(reader.Symbol).GetSymbolIndex()
 		code := selfVm.Code[selfVm.Pc]
 		//switch opCodeAndArgs[0] {
 		switch code.Type {
-		case instr.OPCODE_PUSH_NIL:
-			selfVm.Push(reader.NewNil())
+		case compile.OPCODE_PUSH_NIL:
+			selfVm.Push(compile.NewNil())
 			selfVm.Pc++
 		//case "push-sym":
-		case instr.OPCODE_PUSH_SYM:
+		case compile.OPCODE_PUSH_SYM:
 			//selfVm.Push(reader.NewSymbol(opCodeAndArgs[1]))
-			selfVm.Push(instr.DeserializePushSymbolInstr(code))
+			selfVm.Push(compile.DeserializePushSymbolInstr(code))
 			selfVm.Pc++
 
 		//case "push-num":
-		case instr.OPCODE_PUSH_NUM:
-			selfVm.Push(reader.NewInt(instr.DeserializePushNumberInstr(code)))
+		case compile.OPCODE_PUSH_NUM:
+			selfVm.Push(compile.NewInt(compile.DeserializePushNumberInstr(vm.CompilerEnv, code)))
 			selfVm.Pc++
 		//case "push-boo":
-		case instr.OPCODE_PUSH_TRUE:
+		case compile.OPCODE_PUSH_TRUE:
 			//val := opCodeAndArgs[1] == "#t"
 			//
 			//if opCodeAndArgs[1] != "#f" && opCodeAndArgs[1] != "#t" {
 			//	fmt.Println("not a bool")
 			//	goto ESCAPE
 			//}
-			selfVm.Push(reader.NewBool(true))
+			selfVm.Push(compile.NewBool(true))
 			selfVm.Pc++
-		case instr.OPCODE_PUSH_FALSE:
-			selfVm.Push(reader.NewBool(false))
+		case compile.OPCODE_PUSH_FALSE:
+			selfVm.Push(compile.NewBool(false))
 			selfVm.Pc++
 		//case "push-str":
-		case instr.OPCODE_PUSH_STR:
+		case compile.OPCODE_PUSH_STR:
 			//selfVm.Push(reader.NewString(opCodeAndArgs[1]))
-			selfVm.Push(reader.NewString(instr.DeserializePushStringInstr(code)))
+			selfVm.Push(compile.DeserializePushStringInstr(vm.CompilerEnv, code))
 			selfVm.Pc++
 		//case "pop":
-		case instr.OPCODE_POP:
+		case compile.OPCODE_POP:
 			selfVm.Pop()
 			selfVm.Pc++
 		//case "jmp":
-		case instr.OPCODE_JMP:
+		case compile.OPCODE_JMP:
 			//jumpTo, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
-			jumpTo := instr.DeserializeJmpInstr(code)
+			jumpTo := compile.DeserializeJmpInstr(vm.CompilerEnv, code)
 			selfVm.Pc = jumpTo
 		//case "jmp-if":
-		case instr.OPCODE_JMP_IF:
+		case compile.OPCODE_JMP_IF:
 			//jumpTo, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
-			jumpTo := instr.DeserializeJmpIfInstr(code)
+			jumpTo := compile.DeserializeJmpIfInstr(vm.CompilerEnv, code)
 			val := selfVm.Pop()
-			if val.SExpressionTypeId() != reader.SExpressionTypeBool {
+			if val.SExpressionTypeId() != compile.SExpressionTypeBool {
 				fmt.Println("not a bool")
 				goto ESCAPE
 			}
-			if val.(reader.Bool).GetValue() {
+			if val.(compile.Bool).GetValue() {
 				selfVm.Pc = jumpTo
 			} else {
 				selfVm.Pc++
 			}
 		//case "jmp-else":
-		case instr.OPCODE_JMP_ELSE:
+		case compile.OPCODE_JMP_ELSE:
 			//jumpTo, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
-			jumpTo := instr.DeserializeJmpElseInstr(code)
+			jumpTo := compile.DeserializeJmpElseInstr(vm.CompilerEnv, code)
 			val := selfVm.Pop()
-			if val.SExpressionTypeId() != reader.SExpressionTypeBool {
+			if val.SExpressionTypeId() != compile.SExpressionTypeBool {
 				fmt.Println("not a bool")
 				goto ESCAPE
 			}
 
-			if !val.(reader.Bool).GetValue() {
+			if !val.(compile.Bool).GetValue() {
 				selfVm.Pc = jumpTo
 			} else {
 				selfVm.Pc++
 			}
 
 		//case "load":
-		case instr.OPCODE_LOAD:
-			sym := selfVm.Pop().(reader.Symbol)
-
+		case compile.OPCODE_LOAD:
+			sym := selfVm.Pop().(compile.Symbol)
 			meVm := selfVm
-			found := false
 			for {
-				if meVm.Env.Frame[sym.GetValue()] != nil {
-					found = true
+				if v := meVm.Env.Frame[sym.GetSymbolIndex()]; v != nil {
+					selfVm.Push(*v)
+					selfVm.Pc++
 					break
 				}
-				if meVm.Cont == nil {
-					break
+				if meVm.Cont != nil {
+					meVm = meVm.Cont
+					continue
 				}
-				meVm = meVm.Cont
-			}
-			if found {
-				selfVm.Push(*meVm.Env.Frame[sym.GetValue()])
-				selfVm.Pc++
-			} else {
-				fmt.Println("Symbol not found: " + sym.GetValue())
+				fmt.Println("not found symbol ", sym.GetSymbolIndex())
 				goto ESCAPE
 			}
 		//case "define":
-		case instr.OPCODE_DEFINE:
+		case compile.OPCODE_DEFINE:
 			//sym := reader.NewSymbol(opCodeAndArgs[1])
-			deserialize := instr.DeserializeDefineInstr(code)
+			deserialize := compile.DeserializeDefineInstr(vm.CompilerEnv, code)
 			val := selfVm.Pop()
 			//selfVm.Env.Frame[opCodeAndArgs[1]] = &val
 			selfVm.Env.Frame[deserialize] = &val
 			//selfVm.Push(sym)
-			selfVm.Push(reader.NewSymbol(deserialize))
+			selfVm.Push(compile.NewSymbol(deserialize))
 			selfVm.Pc++
 		//case "define-args":
-		case instr.OPCODE_DEFINE_ARGS:
+		case compile.OPCODE_DEFINE_ARGS:
 			//sym := reader.NewSymbol(opCodeAndArgs[1])
-			deserialize := instr.DeserializeDefineArgsInstr(code)
-			selfVm.Push(reader.NewSymbol(deserialize))
+			deserialize := compile.DeserializeDefineArgsInstr(vm.CompilerEnv, code)
+			selfVm.Push(compile.NewSymbol(deserialize))
 			selfVm.Pc++
 		//case "load-sexp":
-		case instr.OPCODE_PUSH_SEXP:
+		case compile.OPCODE_PUSH_SEXP:
 			//r := bufio.NewReader(strings.NewReader(opCodeAndArgs[1]))
 			//sexp, err := reader.NewReader(r).Read()
 			//if err != nil {
 			//	panic(err)
 			//}
-			deserialize, err := instr.DeserializeSexpressionInstr(code)
+			deserialize, err := compile.DeserializeSexpressionInstr(vm.CompilerEnv, code)
 
 			if err != nil {
 				panic(err)
@@ -239,13 +255,13 @@ func VMRun(vm *Closure) {
 			selfVm.Push(deserialize)
 			selfVm.Pc++
 		//case "set":
-		case instr.OPCODE_SET:
+		case compile.OPCODE_SET:
 			//sym := reader.NewSymbol(opCodeAndArgs[1])
-			deserialize := instr.DeserializeSetInstr(code)
+			deserialize := compile.DeserializeSetInstr(vm.CompilerEnv, code)
 
 			thisVm := selfVm
 			for {
-				//if thisVm.Env.Frame[sym.GetValue()] != nil {
+				//if thisVm.Env.Frame[sym.GetSymbolIndex()] != nil {
 				if thisVm.Env.Frame[deserialize] != nil {
 					break
 				}
@@ -260,23 +276,23 @@ func VMRun(vm *Closure) {
 			selfVm.Push(val)
 			selfVm.Pc++
 		//case "new-env":
-		case instr.OPCODE_NEW_ENV:
+		case compile.OPCODE_NEW_ENV:
 			env := &Env{
-				Frame: make(map[string]*reader.SExpression),
+				Frame: make(map[uint64]*compile.SExpression),
 			}
 			selfVm.Push(env)
 			selfVm.Pc++
 		//case "create-lambda":
-		case instr.OPCODE_CREATE_CLOSURE:
+		case compile.OPCODE_CREATE_CLOSURE:
 			//argsSizeAndCodeLen := strings.SplitN(opCodeAndArgs[1], " ", 2)
 			//argsSize, _ := strconv.ParseInt(argsSizeAndCodeLen[0], 10, 64)
 			//codeLen, _ := strconv.ParseInt(argsSizeAndCodeLen[1], 10, 64)
 
-			argsSize, codeLen := instr.DeserializeCreateClosureInstr(code)
+			argsSize, codeLen := compile.DeserializeCreateClosureInstr(vm.CompilerEnv, code)
 
 			pc := selfVm.Pc
 
-			newVm := NewVM()
+			newVm := NewVM(vm.CompilerEnv)
 
 			for i := int64(1); i <= codeLen; i++ {
 				newVm.Code = append(newVm.Code, selfVm.Code[pc+i])
@@ -284,7 +300,7 @@ func VMRun(vm *Closure) {
 			}
 
 			for i := int64(0); i < argsSize; i++ {
-				sym := selfVm.Pop().(reader.Symbol)
+				sym := selfVm.Pop().(compile.Symbol)
 				newVm.TemporaryArgs = append(newVm.TemporaryArgs, sym)
 			}
 
@@ -294,10 +310,10 @@ func VMRun(vm *Closure) {
 			selfVm.Push(newVm)
 			selfVm.Pc++
 		//case "call":
-		case instr.OPCODE_CALL:
+		case compile.OPCODE_CALL:
 			rawClosure := selfVm.Pop()
 
-			if rawClosure.SExpressionTypeId() != reader.SExpressionTypeClosure {
+			if rawClosure.SExpressionTypeId() != compile.SExpressionTypeClosure {
 				fmt.Println("not a closure")
 				goto ESCAPE
 			}
@@ -305,7 +321,7 @@ func VMRun(vm *Closure) {
 			nextVm := rawClosure.(*Closure)
 			env := nextVm.Env
 
-			argsSize := instr.DeserializeCallInstr(code)
+			argsSize := compile.DeserializeCallInstr(vm.CompilerEnv, code)
 
 			if argsSize != int64(len(nextVm.TemporaryArgs)) {
 				fmt.Println("args size not match")
@@ -314,52 +330,52 @@ func VMRun(vm *Closure) {
 
 			for _, sym := range nextVm.TemporaryArgs {
 				val := selfVm.Pop()
-				env.Frame[sym.GetValue()] = &val
+				env.Frame[sym.GetSymbolIndex()] = &val
 			}
 			nextVm.Env = env
 			nextVm.ReturnCont = selfVm
 			nextVm.ReturnPc = selfVm.Pc
 			selfVm = nextVm
 		//case "ret":
-		case instr.OPCODE_RETURN:
+		case compile.OPCODE_RETURN:
 			val := selfVm.Pop()
 			retPc := selfVm.ReturnPc
-			selfVm.Stack = []reader.SExpression{}
+			selfVm.Stack = NewSexpStack()
 			selfVm.Pc = 0
 			selfVm = selfVm.ReturnCont
 			selfVm.Pc = retPc
 			selfVm.Push(val)
 			selfVm.Pc++
 		//case "and":
-		case instr.OPCODE_AND:
+		case compile.OPCODE_AND:
 			//argsSize, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
-			argsSize := instr.DeserializeAndInstr(code)
-			val := selfVm.Pop().(reader.Bool).GetValue()
-			var tmp reader.SExpression
+			argsSize := compile.DeserializeAndInstr(vm.CompilerEnv, code)
+			val := selfVm.Pop().(compile.Bool).GetValue()
+			var tmp compile.SExpression
 			flag := true
 			for i := int64(1); i < argsSize; i++ {
 				tmp = selfVm.Pop()
 				if flag == false {
 					continue
 				}
-				if val != tmp.(reader.Bool).GetValue() {
+				if val != tmp.(compile.Bool).GetValue() {
 					flag = false
 				}
 			}
 			if flag {
-				selfVm.Push(reader.NewBool(true))
+				selfVm.Push(compile.NewBool(true))
 			} else {
-				selfVm.Push(reader.NewBool(false))
+				selfVm.Push(compile.NewBool(false))
 			}
 			selfVm.Pc++
 		//case "or":
-		case instr.OPCODE_OR:
+		case compile.OPCODE_OR:
 			//argsSize, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
-			argsSize := instr.DeserializeOrInstr(code)
-			var tmp reader.SExpression = selfVm.Pop()
+			argsSize := compile.DeserializeOrInstr(vm.CompilerEnv, code)
+			var tmp compile.SExpression = selfVm.Pop()
 			flag := false
 			for i := int64(0); i < argsSize; i++ {
-				if tmp.(reader.Bool).GetValue() {
+				if tmp.(compile.Bool).GetValue() {
 					flag = true
 				}
 				if flag == true {
@@ -368,86 +384,86 @@ func VMRun(vm *Closure) {
 				tmp = selfVm.Pop()
 			}
 			if flag {
-				selfVm.Push(reader.NewBool(true))
+				selfVm.Push(compile.NewBool(true))
 			} else {
-				selfVm.Push(reader.NewBool(false))
+				selfVm.Push(compile.NewBool(false))
 			}
 			selfVm.Pc++
 		//case "end-code":
-		case instr.OPCODE_END_CODE:
-			fmt.Println(selfVm.Pop())
+		case compile.OPCODE_END_CODE:
+			fmt.Println(selfVm.Pop().String(vm.CompilerEnv))
 			goto ESCAPE
-		case instr.OPCODE_NOP:
+		case compile.OPCODE_NOP:
 			selfVm.Pc++
 
 		//case "print":
-		case instr.OPCODE_PRINT:
-			argLen := instr.DeserializePrintInstr(code)
+		case compile.OPCODE_PRINT:
+			argLen := compile.DeserializePrintInstr(vm.CompilerEnv, code)
 			line := ""
 			for i := int64(0); i < argLen; i++ {
-				line += selfVm.Pop().String()
+				line += selfVm.Pop().String(vm.CompilerEnv)
 			}
 			fmt.Print(line)
-			selfVm.Push(reader.NewNil())
+			selfVm.Push(compile.NewNil())
 			selfVm.Pc++
 		//case "println":
-		case instr.OPCODE_PRINTLN:
-			argLen := instr.DeserializePrintlnInstr(code)
+		case compile.OPCODE_PRINTLN:
+			argLen := compile.DeserializePrintlnInstr(vm.CompilerEnv, code)
 			line := ""
 			for i := int64(0); i < argLen; i++ {
-				line += selfVm.Pop().String()
+				line += selfVm.Pop().String(vm.CompilerEnv)
 			}
 			fmt.Println(line)
-			selfVm.Push(reader.NewNil())
+			selfVm.Push(compile.NewNil())
 			selfVm.Pc++
 		//case "+":
-		case instr.OPCODE_PLUS_NUM:
-			argLen := instr.DeserializePlusNumInstr(code)
+		case compile.OPCODE_PLUS_NUM:
+			argLen := compile.DeserializePlusNumInstr(vm.CompilerEnv, code)
 			sum := int64(0)
 			for i := int64(0); i < argLen; i++ {
-				sum += selfVm.Pop().(reader.Number).GetValue()
+				sum += selfVm.Pop().(compile.Number).GetValue()
 			}
-			selfVm.Push(reader.NewInt(sum))
+			selfVm.Push(compile.NewInt(sum))
 			selfVm.Pc++
 		//case "-":
-		case instr.OPCODE_MINUS_NUM:
-			argLen := instr.DeserializeMinusNumInstr(code)
+		case compile.OPCODE_MINUS_NUM:
+			argLen := compile.DeserializeMinusNumInstr(vm.CompilerEnv, code)
 			minus := int64(0)
 			for i := int64(0); i < argLen-1; i++ {
-				minus += selfVm.Pop().(reader.Number).GetValue()
+				minus += selfVm.Pop().(compile.Number).GetValue()
 			}
-			selfVm.Push(reader.NewInt(selfVm.Pop().(reader.Number).GetValue() - minus))
+			selfVm.Push(compile.NewInt(selfVm.Pop().(compile.Number).GetValue() - minus))
 			selfVm.Pc++
 		//case "*":
-		case instr.OPCODE_MULTIPLY_NUM:
-			argLen := instr.DeserializeMultiplyNumInstr(code)
+		case compile.OPCODE_MULTIPLY_NUM:
+			argLen := compile.DeserializeMultiplyNumInstr(vm.CompilerEnv, code)
 			sum := int64(1)
 			for i := int64(0); i < argLen; i++ {
-				sum *= selfVm.Pop().(reader.Number).GetValue()
+				sum *= selfVm.Pop().(compile.Number).GetValue()
 			}
-			selfVm.Push(reader.NewInt(sum))
+			selfVm.Push(compile.NewInt(sum))
 			selfVm.Pc++
 		//case "/":
-		case instr.OPCODE_DIVIDE_NUM:
-			argLen := instr.DeserializeDivideNumInstr(code)
+		case compile.OPCODE_DIVIDE_NUM:
+			argLen := compile.DeserializeDivideNumInstr(vm.CompilerEnv, code)
 			sum := int64(1)
 			for i := int64(0); i < argLen-1; i++ {
-				sum *= selfVm.Pop().(reader.Number).GetValue()
+				sum *= selfVm.Pop().(compile.Number).GetValue()
 			}
 			if sum == 0 {
 				fmt.Println("divide by zero")
 				goto ESCAPE
 			}
-			selfVm.Push(reader.NewInt(selfVm.Pop().(reader.Number).GetValue() / sum))
+			selfVm.Push(compile.NewInt(selfVm.Pop().(compile.Number).GetValue() / sum))
 			selfVm.Pc++
 		//case "mod":
-		case instr.OPCODE_MODULO_NUM:
-			argLen := instr.DeserializeModuloNumInstr(code)
+		case compile.OPCODE_MODULO_NUM:
+			argLen := compile.DeserializeModuloNumInstr(vm.CompilerEnv, code)
 
 			args := make([]int64, argLen)
 
 			for i := argLen - 1; 0 <= i; i-- {
-				args[i] = selfVm.Pop().(reader.Number).GetValue()
+				args[i] = selfVm.Pop().(compile.Number).GetValue()
 			}
 
 			sum := args[0]
@@ -456,20 +472,20 @@ func VMRun(vm *Closure) {
 				sum %= args[i]
 			}
 
-			selfVm.Push(reader.NewInt(sum))
+			selfVm.Push(compile.NewInt(sum))
 			selfVm.Pc++
 		//case "=":
-		case instr.OPCODE_EQUAL_NUM:
-			argLen := instr.DeserializeEqualNumInstr(code)
+		case compile.OPCODE_EQUAL_NUM:
+			argLen := compile.DeserializeEqualNumInstr(vm.CompilerEnv, code)
 			val := selfVm.Pop()
-			var tmp reader.SExpression
+			var tmp compile.SExpression
 			var result = true
 			for i := int64(1); i < argLen; i++ {
 				tmp = selfVm.Pop()
 				if result == false {
 					continue
 				}
-				if reader.SExpressionTypeNumber != tmp.SExpressionTypeId() {
+				if compile.SExpressionTypeNumber != tmp.SExpressionTypeId() {
 					fmt.Println("arg is not number")
 				}
 				if !val.Equals(tmp) {
@@ -477,16 +493,16 @@ func VMRun(vm *Closure) {
 				}
 			}
 			if result {
-				selfVm.Push(reader.NewBool(true))
+				selfVm.Push(compile.NewBool(true))
 			} else {
-				selfVm.Push(reader.NewBool(false))
+				selfVm.Push(compile.NewBool(false))
 			}
 			selfVm.Pc++
 		//case "!=":
-		case instr.OPCODE_NOT_EQUAL_NUM:
-			argLen := instr.DeserializeNotEqualNumInstr(code)
+		case compile.OPCODE_NOT_EQUAL_NUM:
+			argLen := compile.DeserializeNotEqualNumInstr(vm.CompilerEnv, code)
 			val := selfVm.Pop()
-			var tmp reader.SExpression
+			var tmp compile.SExpression
 			var result = true
 			for i := int64(1); i < argLen; i++ {
 				tmp = selfVm.Pop()
@@ -498,208 +514,208 @@ func VMRun(vm *Closure) {
 				}
 			}
 			if result {
-				selfVm.Push(reader.NewBool(true))
+				selfVm.Push(compile.NewBool(true))
 			} else {
-				selfVm.Push(reader.NewBool(false))
+				selfVm.Push(compile.NewBool(false))
 			}
 			selfVm.Pc++
 		//case ">":
-		case instr.OPCODE_GREATER_THAN_NUM:
-			argLen := instr.DeserializeGreaterThanNumInstr(code)
-			val := selfVm.Pop().(reader.Number).GetValue()
-			var tmp reader.SExpression
+		case compile.OPCODE_GREATER_THAN_NUM:
+			argLen := compile.DeserializeGreaterThanNumInstr(vm.CompilerEnv, code)
+			val := selfVm.Pop().(compile.Number).GetValue()
+			var tmp compile.SExpression
 			flag := true
 			for i := int64(1); i < argLen; i++ {
 				tmp = selfVm.Pop()
 				if flag == false {
 					continue
 				}
-				if val >= tmp.(reader.Number).GetValue() {
+				if val >= tmp.(compile.Number).GetValue() {
 					flag = false
 				}
 			}
 			if flag {
-				selfVm.Push(reader.NewBool(true))
+				selfVm.Push(compile.NewBool(true))
 			} else {
-				selfVm.Push(reader.NewBool(false))
+				selfVm.Push(compile.NewBool(false))
 			}
 			selfVm.Pc++
 		//case "<":
-		case instr.OPCODE_LESS_THAN_NUM:
-			argLen := instr.DeserializeLessThanNumInstr(code)
-			val := selfVm.Pop().(reader.Number).GetValue()
-			var tmp reader.SExpression
+		case compile.OPCODE_LESS_THAN_NUM:
+			argLen := compile.DeserializeLessThanNumInstr(vm.CompilerEnv, code)
+			val := selfVm.Pop().(compile.Number).GetValue()
+			var tmp compile.SExpression
 			flag := true
 			for i := int64(1); i < argLen; i++ {
 				tmp = selfVm.Pop()
 				if flag == false {
 					continue
 				}
-				if val <= tmp.(reader.Number).GetValue() {
+				if val <= tmp.(compile.Number).GetValue() {
 					flag = false
 				}
 			}
 			if flag {
-				selfVm.Push(reader.NewBool(true))
+				selfVm.Push(compile.NewBool(true))
 			} else {
-				selfVm.Push(reader.NewBool(false))
+				selfVm.Push(compile.NewBool(false))
 			}
 			selfVm.Pc++
 		//case ">=":
-		case instr.OPCODE_GREATER_THAN_OR_EQUAL_NUM:
-			argLen := instr.DeserializeGreaterThanOrEqualNumInstr(code)
-			val := selfVm.Pop().(reader.Number).GetValue()
-			var tmp reader.SExpression
+		case compile.OPCODE_GREATER_THAN_OR_EQUAL_NUM:
+			argLen := compile.DeserializeGreaterThanOrEqualNumInstr(vm.CompilerEnv, code)
+			val := selfVm.Pop().(compile.Number).GetValue()
+			var tmp compile.SExpression
 			flag := true
 			for i := int64(1); i < argLen; i++ {
 				tmp = selfVm.Pop()
 				if flag == false {
 					continue
 				}
-				if val > tmp.(reader.Number).GetValue() {
+				if val > tmp.(compile.Number).GetValue() {
 					flag = false
 				}
 			}
 			if flag {
-				selfVm.Push(reader.NewBool(true))
+				selfVm.Push(compile.NewBool(true))
 			} else {
-				selfVm.Push(reader.NewBool(false))
+				selfVm.Push(compile.NewBool(false))
 			}
 			selfVm.Pc++
 
 		//case "<=":
-		case instr.OPCODE_LESS_THAN_OR_EQUAL_NUM:
-			argLen := instr.DeserializeLessThanOrEqualNumInstr(code)
-			val := selfVm.Pop().(reader.Number).GetValue()
-			var tmp reader.SExpression
+		case compile.OPCODE_LESS_THAN_OR_EQUAL_NUM:
+			argLen := compile.DeserializeLessThanOrEqualNumInstr(vm.CompilerEnv, code)
+			val := selfVm.Pop().(compile.Number).GetValue()
+			var tmp compile.SExpression
 			flag := true
 			for i := int64(1); i < argLen; i++ {
 				tmp = selfVm.Pop()
 				if flag == false {
 					continue
 				}
-				if val < tmp.(reader.Number).GetValue() {
+				if val < tmp.(compile.Number).GetValue() {
 					flag = false
 				}
 			}
 			if flag {
-				selfVm.Push(reader.NewBool(true))
+				selfVm.Push(compile.NewBool(true))
 			} else {
-				selfVm.Push(reader.NewBool(false))
+				selfVm.Push(compile.NewBool(false))
 			}
 			selfVm.Pc++
 		//case "car":
-		case instr.OPCODE_CAR:
+		case compile.OPCODE_CAR:
 			target := selfVm.Pop()
-			if target.SExpressionTypeId() != reader.SExpressionTypeConsCell {
+			if target.SExpressionTypeId() != compile.SExpressionTypeConsCell {
 				fmt.Println("car target is not cons cell")
 			}
-			selfVm.Push(target.(reader.ConsCell).GetCar())
+			selfVm.Push(target.(compile.ConsCell).GetCar())
 			selfVm.Pc++
 		//case "cdr":
-		case instr.OPCODE_CDR:
+		case compile.OPCODE_CDR:
 			target := selfVm.Pop()
-			if target.SExpressionTypeId() != reader.SExpressionTypeConsCell {
+			if target.SExpressionTypeId() != compile.SExpressionTypeConsCell {
 				fmt.Println("cdr target is not cons cell")
 			}
-			selfVm.Push(target.(reader.ConsCell).GetCdr())
+			selfVm.Push(target.(compile.ConsCell).GetCdr())
 			selfVm.Pc++
 		//case "random-id":
-		case instr.OPCODE_RANDOM_ID:
+		case compile.OPCODE_RANDOM_ID:
 			id := uuid.New()
-			selfVm.Push(reader.NewString(id.String()))
+			selfVm.Push(compile.NewString(vm.CompilerEnv.GetCompilerSymbol(id.String())))
 			selfVm.Pc++
-		case instr.OPCODE_NEW_ARRAY:
-			selfVm.Push(reader.NewNativeArray(nil))
+		case compile.OPCODE_NEW_ARRAY:
+			selfVm.Push(compile.NewNativeArray(vm.CompilerEnv, nil))
 			selfVm.Pc++
-		case instr.OPCODE_ARRAY_GET:
-			arrArgSize := instr.DeserializeArrayGetInstr(code)
+		case compile.OPCODE_ARRAY_GET:
+			arrArgSize := compile.DeserializeArrayGetInstr(vm.CompilerEnv, code)
 			if arrArgSize != 2 {
 				fmt.Println("array get arg size is not 2")
 				goto ESCAPE
 			}
-			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNumber {
+			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeNumber {
 				fmt.Println("index is not number")
 				goto ESCAPE
 			}
-			index := selfVm.Pop().(reader.Number).GetValue()
-			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNativeArray {
+			index := selfVm.Pop().(compile.Number).GetValue()
+			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeNativeArray {
 				fmt.Println("not an array")
 				goto ESCAPE
 			}
-			target := selfVm.Pop().(*reader.NativeArray)
+			target := selfVm.Pop().(*compile.NativeArray)
 			selfVm.Push(target.Get(index))
 			selfVm.Pc++
-		case instr.OPCODE_ARRAY_SET:
-			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNumber {
+		case compile.OPCODE_ARRAY_SET:
+			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeNumber {
 				fmt.Println("elem is not number")
 				goto ESCAPE
 			}
 			elem := selfVm.Pop()
-			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNumber {
+			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeNumber {
 				fmt.Println("index is not number")
 				goto ESCAPE
 			}
-			index := selfVm.Pop().(reader.Number).GetValue()
-			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNativeArray {
+			index := selfVm.Pop().(compile.Number).GetValue()
+			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeNativeArray {
 				fmt.Println("not an array")
 				goto ESCAPE
 			}
-			target := selfVm.Pop().(*reader.NativeArray)
+			target := selfVm.Pop().(*compile.NativeArray)
 			if err := target.Set(index, elem); err != nil {
 				fmt.Println(err)
 				goto ESCAPE
 			}
 			selfVm.Push(target)
 			selfVm.Pc++
-		case instr.OPCODE_ARRAY_LENGTH:
-			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNativeArray {
+		case compile.OPCODE_ARRAY_LENGTH:
+			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeNativeArray {
 				fmt.Println("not an array")
 				goto ESCAPE
 			}
 			targetRaw := selfVm.Pop()
-			target := targetRaw.(*reader.NativeArray)
-			selfVm.Push(reader.NewInt(target.Length()))
+			target := targetRaw.(*compile.NativeArray)
+			selfVm.Push(compile.NewInt(target.Length()))
 			selfVm.Pc++
-		case instr.OPCODE_ARRAY_PUSH:
+		case compile.OPCODE_ARRAY_PUSH:
 			elem := selfVm.Pop()
-			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNativeArray {
+			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeNativeArray {
 				fmt.Println("not an array")
 				goto ESCAPE
 			}
 			targetRaw := selfVm.Pop()
-			target := targetRaw.(*reader.NativeArray)
+			target := targetRaw.(*compile.NativeArray)
 			target.Push(elem)
 			selfVm.Push(target)
 			selfVm.Pc++
-		case instr.OPCODE_NEW_MAP:
-			selfVm.Push(reader.NewNativeHashmap(map[string]reader.SExpression{}))
+		case compile.OPCODE_NEW_MAP:
+			selfVm.Push(compile.NewNativeHashmap(vm.CompilerEnv, map[uint64]compile.SExpression{}))
 			selfVm.Pc++
-		case instr.OPCODE_MAP_GET:
-			arrArgSize := instr.DeserializeMapGetInstr(code)
+		case compile.OPCODE_MAP_GET:
+			arrArgSize := compile.DeserializeMapGetInstr(vm.CompilerEnv, code)
 
 			if arrArgSize != 2 && arrArgSize != 3 {
 				fmt.Println("map get arg size is not 2 or 3")
 				goto ESCAPE
 			}
 
-			var defaultVal reader.SExpression = reader.NewNil()
+			var defaultVal compile.SExpression = compile.NewNil()
 			if arrArgSize == 3 {
 				defaultVal = selfVm.Pop()
 			}
 
-			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeString {
+			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeString {
 				fmt.Println("key is not string")
 				goto ESCAPE
 			}
 			key := selfVm.Pop()
-			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNativeHashmap {
+			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeNativeHashmap {
 				fmt.Println("not an hashmap")
 				goto ESCAPE
 			}
-			target := selfVm.Pop().(*reader.NativeHashMap)
+			target := selfVm.Pop().(*compile.NativeHashMap)
 
-			val, ok := target.Get(key.(reader.Str).GetValue())
+			val, ok := target.Get(key.(compile.Str).GetSymbolIndex())
 			if !ok {
 				selfVm.Push(defaultVal)
 			} else {
@@ -707,61 +723,61 @@ func VMRun(vm *Closure) {
 			}
 
 			selfVm.Pc++
-		case instr.OPCODE_MAP_SET:
+		case compile.OPCODE_MAP_SET:
 			val := selfVm.Pop()
-			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeString {
+			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeString {
 				fmt.Println("key is not string")
 				goto ESCAPE
 			}
 			key := selfVm.Pop()
-			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNativeHashmap {
+			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeNativeHashmap {
 				fmt.Println("not an hashmap")
 				goto ESCAPE
 			}
-			target := selfVm.Pop().(*reader.NativeHashMap)
-			target.Set(key.(reader.Str).GetValue(), val)
+			target := selfVm.Pop().(*compile.NativeHashMap)
+			target.Set(key.(compile.Str).GetSymbolIndex(), val)
 			selfVm.Push(target)
 			selfVm.Pc++
-		case instr.OPCODE_MAP_LENGTH:
-			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNativeHashmap {
+		case compile.OPCODE_MAP_LENGTH:
+			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeNativeHashmap {
 				fmt.Println("not an hashmap")
 				goto ESCAPE
 			}
-			target := selfVm.Pop().(*reader.NativeHashMap)
-			selfVm.Push(reader.NewInt(target.Length()))
+			target := selfVm.Pop().(*compile.NativeHashMap)
+			selfVm.Push(compile.NewInt(target.Length()))
 			selfVm.Pc++
-		case instr.OPCODE_MAP_KEYS:
-			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNativeHashmap {
+		case compile.OPCODE_MAP_KEYS:
+			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeNativeHashmap {
 				fmt.Println("not an hashmap")
 				goto ESCAPE
 			}
-			target := selfVm.Pop().(*reader.NativeHashMap)
+			target := selfVm.Pop().(*compile.NativeHashMap)
 			selfVm.Push(target)
 			selfVm.Pc++
-		case instr.OPCODE_MAP_DELETE:
-			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeString {
+		case compile.OPCODE_MAP_DELETE:
+			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeString {
 				fmt.Println("key is not string")
 				goto ESCAPE
 			}
 			key := selfVm.Pop()
-			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNativeHashmap {
+			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeNativeHashmap {
 				fmt.Println("not an hashmap")
 				goto ESCAPE
 			}
-			target := selfVm.Pop().(*reader.NativeHashMap)
-			target.Delete(key.(reader.Str).GetValue())
+			target := selfVm.Pop().(*compile.NativeHashMap)
+			target.Delete(key.(compile.Str).GetSymbolIndex())
 			selfVm.Push(target)
 			selfVm.Pc++
 
-		case instr.OPCODE_HEAVY:
-			argsLen := instr.DeserializeHeavyInstr(code)
+		case compile.OPCODE_HEAVY:
+			argsLen := compile.DeserializeHeavyInstr(vm.CompilerEnv, code)
 			if argsLen <= 0 || argsLen > 2 {
 				fmt.Println("invalid heavy instr")
 				goto ESCAPE
 			}
 			if argsLen == 2 {
 				callBackRaw := selfVm.Pop()
-				if callBackRaw.SExpressionTypeId() != reader.SExpressionTypeClosure {
+				if callBackRaw.SExpressionTypeId() != compile.SExpressionTypeClosure {
 					fmt.Println("not a closure")
 					goto ESCAPE
 				}
@@ -775,84 +791,84 @@ func VMRun(vm *Closure) {
 				//send to heavy
 				GetSupervisor().AddTask(sendBody)
 			}
-			selfVm.Push(reader.NewString("somethin-uuid"))
+			//selfVm.Push(compile.NewString(vm.CompilerEnv, "somethin-uuid"))
 			selfVm.Pc++
-		case instr.OPCODE_STRING_SPLIT:
+		case compile.OPCODE_STRING_SPLIT:
 
-			argsLen := instr.DeserializeStringSplitInstr(code)
+			argsLen := compile.DeserializeStringSplitInstr(vm.CompilerEnv, code)
 
 			if argsLen != 2 {
 				fmt.Println("invalid string split instr")
 				goto ESCAPE
 			}
 
-			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeString {
+			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeString {
 				fmt.Println("not a string")
 				goto ESCAPE
 			}
 
-			sep := selfVm.Pop().(reader.Str).GetValue()
+			sep := selfVm.Pop().(compile.Str).GetValue(vm.CompilerEnv)
 
-			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeString {
+			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeString {
 				fmt.Println("not a string")
 				goto ESCAPE
 			}
 
-			target := selfVm.Pop().(reader.Str).GetValue()
+			target := selfVm.Pop().(compile.Str).GetValue(vm.CompilerEnv)
 
 			splitted := strings.Split(target, sep)
 
-			var convArr []reader.SExpression = make([]reader.SExpression, len(splitted))
+			var convArr = make([]compile.SExpression, len(splitted))
 
 			for i := 0; i < len(splitted); i++ {
-				convArr[i] = reader.NewString(splitted[i])
+				convArr[i] = compile.NewString(vm.CompilerEnv.GetCompilerSymbol(splitted[i]))
 			}
 
-			arr := reader.NewNativeArray(convArr)
+			arr := compile.NewNativeArray(vm.CompilerEnv, convArr)
 
 			selfVm.Push(arr)
 			selfVm.Pc++
-		case instr.OPCODE_STRING_JOIN:
-			argsLen := instr.DeserializeStringJoinInstr(code)
+		case compile.OPCODE_STRING_JOIN:
+			argsLen := compile.DeserializeStringJoinInstr(vm.CompilerEnv, code)
 
 			if argsLen != 2 {
 				fmt.Println("invalid string join instr")
 				goto ESCAPE
 			}
 
-			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeString {
+			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeString {
 				fmt.Println("not a string")
 				goto ESCAPE
 			}
 
-			sep := selfVm.Pop().(reader.Str).GetValue()
+			sep := selfVm.Pop().(compile.Str).GetValue(vm.CompilerEnv)
 
-			if selfVm.Peek().SExpressionTypeId() != reader.SExpressionTypeNativeArray {
+			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeNativeArray {
 				fmt.Println("not an array")
 				goto ESCAPE
 			}
 
-			target := selfVm.Pop().(*reader.NativeArray)
+			target := selfVm.Pop().(*compile.NativeArray)
 			conv := make([]string, target.Length())
 
 			for i := int64(0); i < target.Length(); i++ {
-				conv[i] = target.Get(i).(reader.Str).GetValue()
+				conv[i] = target.Get(i).(compile.Str).GetValue(vm.CompilerEnv)
 			}
 
 			joined := strings.Join(conv, sep)
 
-			selfVm.Push(reader.NewString(joined))
+			selfVm.Push(compile.NewString(vm.CompilerEnv.GetCompilerSymbol(joined)))
 			selfVm.Pc++
-		case instr.OPCODE_GET_NOW_TIME_NANO:
-			selfVm.Push(reader.NewInt(time.Now().UnixNano()))
+		case compile.OPCODE_GET_NOW_TIME_NANO:
+			selfVm.Push(compile.NewInt(time.Now().UnixNano()))
 			selfVm.Pc++
-		case instr.OPCODE_READ_FILE:
+		case compile.OPCODE_READ_FILE:
 			pathRaw := selfVm.Pop()
-			if pathRaw.SExpressionTypeId() != reader.SExpressionTypeString {
+			if pathRaw.SExpressionTypeId() != compile.SExpressionTypeString {
 				fmt.Println("not a string")
 				goto ESCAPE
 			}
-			filePath := pathRaw.(reader.Str).GetValue()
+			filePath := pathRaw.(compile.Str).GetValue(vm.CompilerEnv)
 
 			file, err := os.Open(filePath)
 			if err != nil {
@@ -874,14 +890,18 @@ func VMRun(vm *Closure) {
 				fmt.Println("file read err: ", err)
 				goto ESCAPE
 			}
-			selfVm.Push(reader.NewString(string(fileContent)))
+			selfVm.Push(compile.NewString(vm.CompilerEnv.GetCompilerSymbol(string(fileContent))))
 			selfVm.Pc++
+		default:
+			fmt.Println("unknown opcode: ", code)
+			goto ESCAPE
 		}
 	}
 ESCAPE:
 	{
 		for {
-			selfVm.Stack = []reader.SExpression{}
+			selfVm.Stack = NewSexpStack()
+			selfVm.Code = []compile.Instr{}
 			selfVm.Pc = 0
 			if selfVm.ReturnCont == nil {
 				break
@@ -891,26 +911,16 @@ ESCAPE:
 	}
 }
 
-func (vm *Closure) Push(sexp reader.SExpression) {
-	vm.Stack = append(vm.Stack, sexp)
+func (vm *Closure) Push(sexp compile.SExpression) {
+	vm.Stack.Push(sexp)
 }
 
-func (vm *Closure) Pop() reader.SExpression {
-	if len(vm.Stack) == 0 {
-		return nil
-	}
-
-	ret := vm.Stack[len(vm.Stack)-1]
-	vm.Stack = vm.Stack[:len(vm.Stack)-1]
-	return ret
+func (vm *Closure) Pop() compile.SExpression {
+	return vm.Stack.Pop()
 }
 
-func (vm *Closure) Peek() reader.SExpression {
-	if len(vm.Stack) == 0 {
-		return nil
-	}
-
-	return vm.Stack[len(vm.Stack)-1]
+func (vm *Closure) Peek() compile.SExpression {
+	return vm.Stack.Peek()
 }
 
 func (vm *Closure) SetEnv(env *Env) {
@@ -929,15 +939,15 @@ func (vm *Closure) GetCont() *Closure {
 	return vm.Cont
 }
 
-func (vm *Closure) SetCode(code []instr.Instr) {
+func (vm *Closure) SetCode(code []compile.Instr) {
 	vm.Code = code
 }
 
-func (vm *Closure) AddCode(code []instr.Instr) {
+func (vm *Closure) AddCode(code []compile.Instr) {
 	vm.Code = append(vm.Code, code...)
 }
 
-func (vm *Closure) GetCode() []instr.Instr {
+func (vm *Closure) GetCode() []compile.Instr {
 	return vm.Code
 }
 

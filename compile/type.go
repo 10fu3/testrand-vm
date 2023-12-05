@@ -1,4 +1,4 @@
-package token
+package compile
 
 type Token interface {
 	GetKind() TokenKind
