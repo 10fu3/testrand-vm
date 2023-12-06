@@ -38,7 +38,7 @@ func (e *Env) Equals(sexp compile.SExpression) bool {
 type Closure struct {
 	EnvId         uint64
 	CompilerEnv   *compile.CompilerEnvironment
-	Stack         *SexpStack
+	Stack         SexpStack
 	Code          []compile.Instr
 	Pc            int64
 	Cont          *Closure
@@ -70,10 +70,9 @@ func (stk *SexpStack) Pop() compile.SExpression {
 	}
 
 	r := stk.stack[stk.Size-1]
-	stk.stack[stk.Size-1] = nil
 
 	if len(stk.stack)/2 > stk.Size && len(stk.stack) > 31 {
-		stk.stack = stk.stack[:len(stk.stack)/2]
+		stk.stack = stk.stack[:(len(stk.stack) * 3 / 4)]
 	}
 
 	stk.Size--
@@ -87,9 +86,10 @@ func (stk *SexpStack) Peek() compile.SExpression {
 	return stk.stack[stk.Size-1]
 }
 
-func NewSexpStack() *SexpStack {
-	stk := new(SexpStack)
-	return stk
+func NewSexpStack() SexpStack {
+	return SexpStack{
+		stack: make([]compile.SExpression, 0, 6),
+	}
 }
 
 func (vm *Closure) TypeId() string {
@@ -374,7 +374,7 @@ func VMRun(vm *Closure) {
 			}
 			for _, sym := range nextVm.TemporaryArgs {
 				val := selfVm.Pop()
-				env.Frame[sym.GetSymbolIndex()] = &val
+				env.Frame[uint64(sym)] = &val
 			}
 			nextVm.ReturnCont = selfVm
 			nextVm.ReturnPc = selfVm.Pc
@@ -554,6 +554,10 @@ func VMRun(vm *Closure) {
 				if result == false {
 					continue
 				}
+				if val.SExpressionTypeId() != compile.SExpressionTypeNumber {
+					fmt.Println("arg is not number")
+					goto ESCAPE
+				}
 				if val.Equals(tmp) {
 					result = false
 				}
@@ -574,6 +578,10 @@ func VMRun(vm *Closure) {
 				tmp = selfVm.Pop()
 				if flag == false {
 					continue
+				}
+				if val.SExpressionTypeId() != compile.SExpressionTypeNumber {
+					fmt.Println("arg is not number")
+					goto ESCAPE
 				}
 				if val >= tmp.(compile.Number) {
 					flag = false
@@ -596,6 +604,10 @@ func VMRun(vm *Closure) {
 				if flag == false {
 					continue
 				}
+				if val.SExpressionTypeId() != compile.SExpressionTypeNumber {
+					fmt.Println("arg is not number")
+					goto ESCAPE
+				}
 				if val <= tmp.(compile.Number) {
 					flag = false
 				}
@@ -616,6 +628,10 @@ func VMRun(vm *Closure) {
 				tmp = selfVm.Pop()
 				if flag == false {
 					continue
+				}
+				if val.SExpressionTypeId() != compile.SExpressionTypeNumber {
+					fmt.Println("arg is not number")
+					goto ESCAPE
 				}
 				if val > tmp.(compile.Number) {
 					flag = false
@@ -638,6 +654,10 @@ func VMRun(vm *Closure) {
 				tmp = selfVm.Pop()
 				if flag == false {
 					continue
+				}
+				if val.SExpressionTypeId() != compile.SExpressionTypeNumber {
+					fmt.Println("arg is not number")
+					goto ESCAPE
 				}
 				if val < tmp.(compile.Number) {
 					flag = false
@@ -780,7 +800,7 @@ func VMRun(vm *Closure) {
 				goto ESCAPE
 			}
 			target := selfVm.Pop().(*compile.NativeHashMap)
-			target.Set(key.(compile.Str).GetSymbolIndex(), val)
+			target.Set(uint64(key.(compile.Str)), val)
 			selfVm.Push(target)
 			selfVm.Pc++
 		case compile.OPCODE_MAP_LENGTH:
@@ -810,7 +830,7 @@ func VMRun(vm *Closure) {
 				goto ESCAPE
 			}
 			target := selfVm.Pop().(*compile.NativeHashMap)
-			target.Delete(key.(compile.Str).GetSymbolIndex())
+			target.Delete(uint64(key.(compile.Str)))
 			selfVm.Push(target)
 			selfVm.Pc++
 
