@@ -3,6 +3,7 @@ package compile
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -76,10 +77,6 @@ func (i Number) Equals(sexp SExpression) bool {
 }
 
 type Number int64
-
-func NewInt(val int64) Number {
-	return Number(val)
-}
 
 type Bool bool
 
@@ -155,34 +152,29 @@ func (s Str) IsList() bool {
 	return false
 }
 
-type Nil interface {
-	SExpression
-}
+type Nil int8
 
-type _nil struct {
-}
-
-func (n *_nil) Equals(sexp SExpression) bool {
+func (n Nil) Equals(sexp SExpression) bool {
 	return "nil" == sexp.TypeId()
 }
 
-func (n *_nil) TypeId() string {
+func (n Nil) TypeId() string {
 	return "nil"
 }
 
-func (n *_nil) SExpressionTypeId() SExpressionType {
+func (n Nil) SExpressionTypeId() SExpressionType {
 	return SExpressionTypeNil
 }
 
-func (n *_nil) String(compEnv *CompilerEnvironment) string {
+func (n Nil) String(compEnv *CompilerEnvironment) string {
 	return "#nil"
 }
 
-func (n *_nil) IsList() bool {
+func (n Nil) IsList() bool {
 	return false
 }
 
-var _nilInstance = &_nil{}
+var _nilInstance = Nil(math.MaxInt8 * -1)
 
 func NewNil() Nil {
 	return _nilInstance
