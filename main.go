@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"testrand-vm/compile"
 	"testrand-vm/vm"
 )
 
 func main() {
+	debug.SetGCPercent(1200)
 	stdin := bufio.NewReader(os.Stdin)
 	compileEnv := compile.NewCompileEnvironment()
 	read := compile.NewReader(compileEnv, stdin)

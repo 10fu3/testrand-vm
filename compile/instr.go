@@ -89,19 +89,24 @@ func CreateJmpElseInstr(jmpTo int64) Instr {
 	return NewInstr(OPCODE_JMP_ELSE, b)
 }
 
-func CreateLoadInstr() Instr {
-	return NewInstr(OPCODE_LOAD, []byte{})
+func CreateLoadInstr(envIndex uint64, symbolIndex uint64) Instr {
+	b := make([]byte, 16)
+	binary.LittleEndian.PutUint64(b, envIndex)
+	binary.LittleEndian.PutUint64(b[8:], symbolIndex)
+	return NewInstr(OPCODE_LOAD, b)
 }
 
-func CreateDefineInstr(symbolIndex uint64) Instr {
-	b := make([]byte, 8)
-	binary.LittleEndian.PutUint64(b, symbolIndex)
+func CreateDefineInstr(envIndex, symbolIndex uint64) Instr {
+	b := make([]byte, 16)
+	binary.LittleEndian.PutUint64(b, envIndex)
+	binary.LittleEndian.PutUint64(b[8:], symbolIndex)
 	return NewInstr(OPCODE_DEFINE, b)
 }
 
-func CreateDefineArgsInstr(symbolIndex uint64) Instr {
-	b := make([]byte, 8)
-	binary.LittleEndian.PutUint64(b, symbolIndex)
+func CreateDefineArgsInstr(envIndex, symbolIndex uint64) Instr {
+	b := make([]byte, 16)
+	binary.LittleEndian.PutUint64(b, envIndex)
+	binary.LittleEndian.PutUint64(b[8:], symbolIndex)
 	return NewInstr(OPCODE_DEFINE_ARGS, b)
 }
 
@@ -120,14 +125,18 @@ func CreateRetInstr() Instr {
 	return NewInstr(OPCODE_RETURN, []byte{})
 }
 
-func CreateSetInstr(symbolIndex uint64) Instr {
-	b := make([]byte, 8)
-	binary.LittleEndian.PutUint64(b, symbolIndex)
+func CreateSetInstr(envIndex, symbolIndex uint64) Instr {
+	b := make([]byte, 16)
+	binary.LittleEndian.PutUint64(b, envIndex)
+	binary.LittleEndian.PutUint64(b[8:], symbolIndex)
 	return NewInstr(OPCODE_SET, b)
 }
 
-func CreateNewEnvInstr() Instr {
-	return NewInstr(OPCODE_NEW_ENV, []byte{})
+func CreateNewEnvInstr(parentIndex, envIndex uint64) Instr {
+	b := make([]byte, 16)
+	binary.LittleEndian.PutUint64(b, parentIndex)
+	binary.LittleEndian.PutUint64(b[8:], envIndex)
+	return NewInstr(OPCODE_NEW_ENV, b)
 }
 
 type FunctionGenerateInstr func(argsSize int64) Instr
@@ -439,6 +448,12 @@ func DeserializeInstructions(data []byte) []Instr {
 	return instr
 }
 
+func DeserializeLoadInstr(compEnv *CompilerEnvironment, data Instr) (uint64, uint64) {
+	envI := binary.LittleEndian.Uint64(data.Data[0:8])
+	symbolI := binary.LittleEndian.Uint64(data.Data[8:16])
+	return envI, symbolI
+}
+
 func DeserializePushNumberInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
@@ -477,12 +492,27 @@ func DeserializeJmpElseInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeDefineInstr(compEnv *CompilerEnvironment, data Instr) uint64 {
-	return binary.LittleEndian.Uint64(data.Data)
+func DeserializeNewEnvInstr(compEnv *CompilerEnvironment, data Instr) (uint64, uint64) {
+
+	parentIndex := binary.LittleEndian.Uint64(data.Data[0:8])
+	envIndex := binary.LittleEndian.Uint64(data.Data[8:16])
+
+	return parentIndex, envIndex
 }
 
-func DeserializeDefineArgsInstr(compEnv *CompilerEnvironment, data Instr) uint64 {
-	return binary.LittleEndian.Uint64(data.Data)
+func DeserializeDefineInstr(compEnv *CompilerEnvironment, data Instr) (uint64, uint64) {
+
+	envI := binary.LittleEndian.Uint64(data.Data[0:8])
+	symbolI := binary.LittleEndian.Uint64(data.Data[8:16])
+
+	return envI, symbolI
+}
+
+func DeserializeDefineArgsInstr(compEnv *CompilerEnvironment, data Instr) (uint64, uint64) {
+	envI := binary.LittleEndian.Uint64(data.Data[0:8])
+	symbolI := binary.LittleEndian.Uint64(data.Data[8:16])
+
+	return envI, symbolI
 }
 
 func DeserializeCreateClosureInstr(compEnv *CompilerEnvironment, data Instr) (int64, int64) {
@@ -491,8 +521,13 @@ func DeserializeCreateClosureInstr(compEnv *CompilerEnvironment, data Instr) (in
 	return varslen, funcOpAffectedCode
 }
 
-func DeserializeSetInstr(compEnv *CompilerEnvironment, data Instr) uint64 {
-	return binary.LittleEndian.Uint64(data.Data)
+func DeserializeSetInstr(compEnv *CompilerEnvironment, data Instr) (uint64, uint64) {
+
+	envI := binary.LittleEndian.Uint64(data.Data[0:8])
+	symbolI := binary.LittleEndian.Uint64(data.Data[8:16])
+
+	return envI, symbolI
+
 }
 
 func DeserializeCallInstr(compEnv *CompilerEnvironment, data Instr) int64 {

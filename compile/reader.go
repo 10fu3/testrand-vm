@@ -50,7 +50,7 @@ func (r *reader) sExpression() (SExpression, error) {
 			}
 			r.Token = nextToken
 		}
-		return NewInt(value), nil
+		return Number(value), nil
 	}
 
 	if r.Token.GetKind() == TokenKindString {

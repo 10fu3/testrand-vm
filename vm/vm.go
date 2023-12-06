@@ -5,13 +5,14 @@ import (
 	"github.com/google/uuid"
 	"os"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"testrand-vm/compile"
 	"time"
 )
 
 type Env struct {
-	Frame map[uint64]*compile.SExpression
+	SelfIndex uint64
+	Frame     map[uint64]*compile.SExpression
 }
 
 func (e *Env) TypeId() string {
@@ -35,12 +36,11 @@ func (e *Env) Equals(sexp compile.SExpression) bool {
 }
 
 type Closure struct {
+	EnvId         uint64
 	CompilerEnv   *compile.CompilerEnvironment
-	Mutex         *sync.RWMutex
 	Stack         *SexpStack
 	Code          []compile.Instr
 	Pc            int64
-	Env           *Env
 	Cont          *Closure
 	ReturnCont    *Closure
 	ReturnPc      int64
@@ -60,7 +60,7 @@ func (stk *SexpStack) Push(data compile.SExpression) {
 		return
 	}
 
-	stk.stack = append(stk.stack, data)
+	stk.stack = append(stk.stack, data, nil, nil, nil, nil, nil)
 	stk.Size++
 }
 
@@ -71,6 +71,10 @@ func (stk *SexpStack) Pop() compile.SExpression {
 
 	r := stk.stack[stk.Size-1]
 	stk.stack[stk.Size-1] = nil
+
+	if len(stk.stack)/2 > stk.Size && len(stk.stack) > 31 {
+		stk.stack = stk.stack[:len(stk.stack)/2]
+	}
 
 	stk.Size--
 	return r
@@ -109,14 +113,37 @@ func (vm *Closure) Equals(sexp compile.SExpression) bool {
 	panic("implement me")
 }
 
+var globalEnv = []Env{
+	{
+		SelfIndex: 0,
+		Frame:     map[uint64]*compile.SExpression{},
+	},
+}
+var globalEnvLen = uint64(0)
+
+var globalEnvMutex = uint32(0)
+
+func GetEnv(envId uint64) (*Env, bool) {
+	if envId >= uint64(len(globalEnv)) {
+		return nil, false
+	}
+	return &globalEnv[envId], true
+}
+
+func SetEnv(index uint64, env *Env) {
+	if index >= uint64(len(globalEnv)) {
+		globalEnvLen = index + 1
+		globalEnv = append(globalEnv, make([]Env, index-uint64(len(globalEnv))+1)...)
+	}
+	globalEnv[index] = *env
+}
+
 func NewVM(compEnv *compile.CompilerEnvironment) *Closure {
 	return &Closure{
 		CompilerEnv: compEnv,
 		Stack:       NewSexpStack(),
 		Pc:          0,
-		Env:         &Env{Frame: make(map[uint64]*compile.SExpression)},
 		Cont:        nil,
-		Mutex:       &sync.RWMutex{},
 	}
 }
 
@@ -128,6 +155,9 @@ func VMRunFromEntryPoint(vm *Closure) {
 }
 
 func VMRun(vm *Closure) {
+
+	for !atomic.CompareAndSwapUint32(&globalEnvMutex, 0, 1) {
+	}
 
 	selfVm := vm
 
@@ -148,7 +178,7 @@ func VMRun(vm *Closure) {
 
 		//case "push-num":
 		case compile.OPCODE_PUSH_NUM:
-			selfVm.Push(compile.NewInt(compile.DeserializePushNumberInstr(vm.CompilerEnv, code)))
+			selfVm.Push(compile.Number(compile.DeserializePushNumberInstr(vm.CompilerEnv, code)))
 			selfVm.Pc++
 		//case "push-boo":
 		case compile.OPCODE_PUSH_TRUE:
@@ -158,10 +188,10 @@ func VMRun(vm *Closure) {
 			//	fmt.Println("not a bool")
 			//	goto ESCAPE
 			//}
-			selfVm.Push(compile.NewBool(true))
+			selfVm.Push(compile.Bool(true))
 			selfVm.Pc++
 		case compile.OPCODE_PUSH_FALSE:
-			selfVm.Push(compile.NewBool(false))
+			selfVm.Push(compile.Bool(false))
 			selfVm.Pc++
 		//case "push-str":
 		case compile.OPCODE_PUSH_STR:
@@ -186,7 +216,7 @@ func VMRun(vm *Closure) {
 				fmt.Println("not a bool")
 				goto ESCAPE
 			}
-			if val.(compile.Bool).GetValue() {
+			if val.(compile.Bool) {
 				selfVm.Pc = jumpTo
 			} else {
 				selfVm.Pc++
@@ -201,7 +231,7 @@ func VMRun(vm *Closure) {
 				goto ESCAPE
 			}
 
-			if !val.(compile.Bool).GetValue() {
+			if !val.(compile.Bool) {
 				selfVm.Pc = jumpTo
 			} else {
 				selfVm.Pc++
@@ -209,36 +239,44 @@ func VMRun(vm *Closure) {
 
 		//case "load":
 		case compile.OPCODE_LOAD:
-			sym := selfVm.Pop().(compile.Symbol)
-			meVm := selfVm
-			for {
-				if v := meVm.Env.Frame[sym.GetSymbolIndex()]; v != nil {
-					selfVm.Push(*v)
-					selfVm.Pc++
-					break
-				}
-				if meVm.Cont != nil {
-					meVm = meVm.Cont
-					continue
-				}
-				fmt.Println("not found symbol ", sym.GetSymbolIndex())
+
+			envId, symId := compile.DeserializeLoadInstr(vm.CompilerEnv, code)
+
+			loaded, ok := GetEnv(envId)
+
+			if !ok {
+				fmt.Println("not found")
 				goto ESCAPE
 			}
+
+			selfVm.Push(*loaded.Frame[symId])
+			selfVm.Pc++
+
 		//case "define":
 		case compile.OPCODE_DEFINE:
 			//sym := reader.NewSymbol(opCodeAndArgs[1])
-			deserialize := compile.DeserializeDefineInstr(vm.CompilerEnv, code)
+			envId, symIndexId := compile.DeserializeDefineInstr(vm.CompilerEnv, code)
 			val := selfVm.Pop()
 			//selfVm.Env.Frame[opCodeAndArgs[1]] = &val
-			selfVm.Env.Frame[deserialize] = &val
+			env, ok := GetEnv(envId)
+			if !ok {
+				fmt.Println("not found env for define")
+				goto ESCAPE
+			}
+			env.Frame[symIndexId] = &val
 			//selfVm.Push(sym)
-			selfVm.Push(compile.NewSymbol(deserialize))
+			symId, err := vm.CompilerEnv.FindSymbolInEnvironment(envId, symIndexId)
+			if err != nil {
+				fmt.Println(err)
+				goto ESCAPE
+			}
+			selfVm.Push(compile.NewSymbol(symId))
 			selfVm.Pc++
 		//case "define-args":
 		case compile.OPCODE_DEFINE_ARGS:
 			//sym := reader.NewSymbol(opCodeAndArgs[1])
-			deserialize := compile.DeserializeDefineArgsInstr(vm.CompilerEnv, code)
-			selfVm.Push(compile.NewSymbol(deserialize))
+			_, symId := compile.DeserializeDefineArgsInstr(vm.CompilerEnv, code)
+			selfVm.Push(compile.NewSymbol(symId))
 			selfVm.Pc++
 		//case "load-sexp":
 		case compile.OPCODE_PUSH_SEXP:
@@ -257,29 +295,30 @@ func VMRun(vm *Closure) {
 		//case "set":
 		case compile.OPCODE_SET:
 			//sym := reader.NewSymbol(opCodeAndArgs[1])
-			deserialize := compile.DeserializeSetInstr(vm.CompilerEnv, code)
+			envId, symId := compile.DeserializeSetInstr(vm.CompilerEnv, code)
 
-			thisVm := selfVm
-			for {
-				//if thisVm.Env.Frame[sym.GetSymbolIndex()] != nil {
-				if thisVm.Env.Frame[deserialize] != nil {
-					break
-				}
-				if thisVm.Cont == nil {
-					break
-				}
-				thisVm = thisVm.Cont
+			env, ok := GetEnv(envId)
+			if !ok {
+				fmt.Println("not found")
+				goto ESCAPE
 			}
 
 			val := selfVm.Pop()
-			thisVm.Env.Frame[deserialize] = &val
+			env.Frame[symId] = &val
 			selfVm.Push(val)
 			selfVm.Pc++
 		//case "new-env":
 		case compile.OPCODE_NEW_ENV:
+
+			_, envId := compile.DeserializeNewEnvInstr(vm.CompilerEnv, code)
+
 			env := &Env{
-				Frame: make(map[uint64]*compile.SExpression),
+				SelfIndex: envId,
+				Frame:     make(map[uint64]*compile.SExpression),
 			}
+
+			SetEnv(envId, env)
+
 			selfVm.Push(env)
 			selfVm.Pc++
 		//case "create-lambda":
@@ -305,7 +344,7 @@ func VMRun(vm *Closure) {
 			}
 
 			newVm.Cont = selfVm
-			newVm.Env = selfVm.Pop().(*Env)
+			newVm.EnvId = selfVm.Pop().(*Env).SelfIndex
 			newVm.Pc = 0
 			selfVm.Push(newVm)
 			selfVm.Pc++
@@ -319,7 +358,13 @@ func VMRun(vm *Closure) {
 			}
 
 			nextVm := rawClosure.(*Closure)
-			env := nextVm.Env
+			nextEnvId := nextVm.EnvId
+			env, ok := GetEnv(nextEnvId)
+
+			if !ok {
+				fmt.Println("not found")
+				goto ESCAPE
+			}
 
 			argsSize := compile.DeserializeCallInstr(vm.CompilerEnv, code)
 
@@ -327,12 +372,10 @@ func VMRun(vm *Closure) {
 				fmt.Println("args size not match")
 				goto ESCAPE
 			}
-
 			for _, sym := range nextVm.TemporaryArgs {
 				val := selfVm.Pop()
 				env.Frame[sym.GetSymbolIndex()] = &val
 			}
-			nextVm.Env = env
 			nextVm.ReturnCont = selfVm
 			nextVm.ReturnPc = selfVm.Pc
 			selfVm = nextVm
@@ -350,7 +393,7 @@ func VMRun(vm *Closure) {
 		case compile.OPCODE_AND:
 			//argsSize, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
 			argsSize := compile.DeserializeAndInstr(vm.CompilerEnv, code)
-			val := selfVm.Pop().(compile.Bool).GetValue()
+			val := selfVm.Pop().(compile.Bool)
 			var tmp compile.SExpression
 			flag := true
 			for i := int64(1); i < argsSize; i++ {
@@ -358,14 +401,14 @@ func VMRun(vm *Closure) {
 				if flag == false {
 					continue
 				}
-				if val != tmp.(compile.Bool).GetValue() {
+				if val != tmp.(compile.Bool) {
 					flag = false
 				}
 			}
 			if flag {
-				selfVm.Push(compile.NewBool(true))
+				selfVm.Push(compile.Bool(true))
 			} else {
-				selfVm.Push(compile.NewBool(false))
+				selfVm.Push(compile.Bool(false))
 			}
 			selfVm.Pc++
 		//case "or":
@@ -375,7 +418,7 @@ func VMRun(vm *Closure) {
 			var tmp compile.SExpression = selfVm.Pop()
 			flag := false
 			for i := int64(0); i < argsSize; i++ {
-				if tmp.(compile.Bool).GetValue() {
+				if tmp.(compile.Bool) {
 					flag = true
 				}
 				if flag == true {
@@ -384,14 +427,16 @@ func VMRun(vm *Closure) {
 				tmp = selfVm.Pop()
 			}
 			if flag {
-				selfVm.Push(compile.NewBool(true))
+				selfVm.Push(compile.Bool(true))
 			} else {
-				selfVm.Push(compile.NewBool(false))
+				selfVm.Push(compile.Bool(false))
 			}
 			selfVm.Pc++
 		//case "end-code":
 		case compile.OPCODE_END_CODE:
-			fmt.Println(selfVm.Pop().String(vm.CompilerEnv))
+			val := selfVm.Pop()
+			disp := val.String(vm.CompilerEnv)
+			fmt.Println(disp)
 			goto ESCAPE
 		case compile.OPCODE_NOP:
 			selfVm.Pc++
@@ -421,40 +466,40 @@ func VMRun(vm *Closure) {
 			argLen := compile.DeserializePlusNumInstr(vm.CompilerEnv, code)
 			sum := int64(0)
 			for i := int64(0); i < argLen; i++ {
-				sum += selfVm.Pop().(compile.Number).GetValue()
+				sum += int64(selfVm.Pop().(compile.Number))
 			}
-			selfVm.Push(compile.NewInt(sum))
+			selfVm.Push(compile.Number(sum))
 			selfVm.Pc++
 		//case "-":
 		case compile.OPCODE_MINUS_NUM:
 			argLen := compile.DeserializeMinusNumInstr(vm.CompilerEnv, code)
 			minus := int64(0)
 			for i := int64(0); i < argLen-1; i++ {
-				minus += selfVm.Pop().(compile.Number).GetValue()
+				minus += int64(selfVm.Pop().(compile.Number))
 			}
-			selfVm.Push(compile.NewInt(selfVm.Pop().(compile.Number).GetValue() - minus))
+			selfVm.Push(compile.Number(int64(selfVm.Pop().(compile.Number)) - minus))
 			selfVm.Pc++
 		//case "*":
 		case compile.OPCODE_MULTIPLY_NUM:
 			argLen := compile.DeserializeMultiplyNumInstr(vm.CompilerEnv, code)
 			sum := int64(1)
 			for i := int64(0); i < argLen; i++ {
-				sum *= selfVm.Pop().(compile.Number).GetValue()
+				sum *= int64(selfVm.Pop().(compile.Number))
 			}
-			selfVm.Push(compile.NewInt(sum))
+			selfVm.Push(compile.Number(sum))
 			selfVm.Pc++
 		//case "/":
 		case compile.OPCODE_DIVIDE_NUM:
 			argLen := compile.DeserializeDivideNumInstr(vm.CompilerEnv, code)
 			sum := int64(1)
 			for i := int64(0); i < argLen-1; i++ {
-				sum *= selfVm.Pop().(compile.Number).GetValue()
+				sum *= int64(selfVm.Pop().(compile.Number))
 			}
 			if sum == 0 {
 				fmt.Println("divide by zero")
 				goto ESCAPE
 			}
-			selfVm.Push(compile.NewInt(selfVm.Pop().(compile.Number).GetValue() / sum))
+			selfVm.Push(compile.Number(int64(selfVm.Pop().(compile.Number)) / sum))
 			selfVm.Pc++
 		//case "mod":
 		case compile.OPCODE_MODULO_NUM:
@@ -463,7 +508,7 @@ func VMRun(vm *Closure) {
 			args := make([]int64, argLen)
 
 			for i := argLen - 1; 0 <= i; i-- {
-				args[i] = selfVm.Pop().(compile.Number).GetValue()
+				args[i] = int64(selfVm.Pop().(compile.Number))
 			}
 
 			sum := args[0]
@@ -472,7 +517,7 @@ func VMRun(vm *Closure) {
 				sum %= args[i]
 			}
 
-			selfVm.Push(compile.NewInt(sum))
+			selfVm.Push(compile.Number(sum))
 			selfVm.Pc++
 		//case "=":
 		case compile.OPCODE_EQUAL_NUM:
@@ -493,9 +538,9 @@ func VMRun(vm *Closure) {
 				}
 			}
 			if result {
-				selfVm.Push(compile.NewBool(true))
+				selfVm.Push(compile.Bool(true))
 			} else {
-				selfVm.Push(compile.NewBool(false))
+				selfVm.Push(compile.Bool(false))
 			}
 			selfVm.Pc++
 		//case "!=":
@@ -514,15 +559,15 @@ func VMRun(vm *Closure) {
 				}
 			}
 			if result {
-				selfVm.Push(compile.NewBool(true))
+				selfVm.Push(compile.Bool(true))
 			} else {
-				selfVm.Push(compile.NewBool(false))
+				selfVm.Push(compile.Bool(false))
 			}
 			selfVm.Pc++
 		//case ">":
 		case compile.OPCODE_GREATER_THAN_NUM:
 			argLen := compile.DeserializeGreaterThanNumInstr(vm.CompilerEnv, code)
-			val := selfVm.Pop().(compile.Number).GetValue()
+			val := selfVm.Pop().(compile.Number)
 			var tmp compile.SExpression
 			flag := true
 			for i := int64(1); i < argLen; i++ {
@@ -530,20 +575,20 @@ func VMRun(vm *Closure) {
 				if flag == false {
 					continue
 				}
-				if val >= tmp.(compile.Number).GetValue() {
+				if val >= tmp.(compile.Number) {
 					flag = false
 				}
 			}
 			if flag {
-				selfVm.Push(compile.NewBool(true))
+				selfVm.Push(compile.Bool(true))
 			} else {
-				selfVm.Push(compile.NewBool(false))
+				selfVm.Push(compile.Bool(false))
 			}
 			selfVm.Pc++
 		//case "<":
 		case compile.OPCODE_LESS_THAN_NUM:
 			argLen := compile.DeserializeLessThanNumInstr(vm.CompilerEnv, code)
-			val := selfVm.Pop().(compile.Number).GetValue()
+			val := selfVm.Pop().(compile.Number)
 			var tmp compile.SExpression
 			flag := true
 			for i := int64(1); i < argLen; i++ {
@@ -551,20 +596,20 @@ func VMRun(vm *Closure) {
 				if flag == false {
 					continue
 				}
-				if val <= tmp.(compile.Number).GetValue() {
+				if val <= tmp.(compile.Number) {
 					flag = false
 				}
 			}
 			if flag {
-				selfVm.Push(compile.NewBool(true))
+				selfVm.Push(compile.Bool(true))
 			} else {
-				selfVm.Push(compile.NewBool(false))
+				selfVm.Push(compile.Bool(false))
 			}
 			selfVm.Pc++
 		//case ">=":
 		case compile.OPCODE_GREATER_THAN_OR_EQUAL_NUM:
 			argLen := compile.DeserializeGreaterThanOrEqualNumInstr(vm.CompilerEnv, code)
-			val := selfVm.Pop().(compile.Number).GetValue()
+			val := selfVm.Pop().(compile.Number)
 			var tmp compile.SExpression
 			flag := true
 			for i := int64(1); i < argLen; i++ {
@@ -572,21 +617,21 @@ func VMRun(vm *Closure) {
 				if flag == false {
 					continue
 				}
-				if val > tmp.(compile.Number).GetValue() {
+				if val > tmp.(compile.Number) {
 					flag = false
 				}
 			}
 			if flag {
-				selfVm.Push(compile.NewBool(true))
+				selfVm.Push(compile.Bool(true))
 			} else {
-				selfVm.Push(compile.NewBool(false))
+				selfVm.Push(compile.Bool(false))
 			}
 			selfVm.Pc++
 
 		//case "<=":
 		case compile.OPCODE_LESS_THAN_OR_EQUAL_NUM:
 			argLen := compile.DeserializeLessThanOrEqualNumInstr(vm.CompilerEnv, code)
-			val := selfVm.Pop().(compile.Number).GetValue()
+			val := selfVm.Pop().(compile.Number)
 			var tmp compile.SExpression
 			flag := true
 			for i := int64(1); i < argLen; i++ {
@@ -594,14 +639,14 @@ func VMRun(vm *Closure) {
 				if flag == false {
 					continue
 				}
-				if val < tmp.(compile.Number).GetValue() {
+				if val < tmp.(compile.Number) {
 					flag = false
 				}
 			}
 			if flag {
-				selfVm.Push(compile.NewBool(true))
+				selfVm.Push(compile.Bool(true))
 			} else {
-				selfVm.Push(compile.NewBool(false))
+				selfVm.Push(compile.Bool(false))
 			}
 			selfVm.Pc++
 		//case "car":
@@ -623,7 +668,7 @@ func VMRun(vm *Closure) {
 		//case "random-id":
 		case compile.OPCODE_RANDOM_ID:
 			id := uuid.New()
-			selfVm.Push(compile.NewString(vm.CompilerEnv.GetCompilerSymbol(id.String())))
+			selfVm.Push(compile.Str(vm.CompilerEnv.GetCompilerSymbol(id.String())))
 			selfVm.Pc++
 		case compile.OPCODE_NEW_ARRAY:
 			selfVm.Push(compile.NewNativeArray(vm.CompilerEnv, nil))
@@ -638,7 +683,7 @@ func VMRun(vm *Closure) {
 				fmt.Println("index is not number")
 				goto ESCAPE
 			}
-			index := selfVm.Pop().(compile.Number).GetValue()
+			index := int64(selfVm.Pop().(compile.Number))
 			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeNativeArray {
 				fmt.Println("not an array")
 				goto ESCAPE
@@ -656,7 +701,7 @@ func VMRun(vm *Closure) {
 				fmt.Println("index is not number")
 				goto ESCAPE
 			}
-			index := selfVm.Pop().(compile.Number).GetValue()
+			index := int64(selfVm.Pop().(compile.Number))
 			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeNativeArray {
 				fmt.Println("not an array")
 				goto ESCAPE
@@ -675,7 +720,7 @@ func VMRun(vm *Closure) {
 			}
 			targetRaw := selfVm.Pop()
 			target := targetRaw.(*compile.NativeArray)
-			selfVm.Push(compile.NewInt(target.Length()))
+			selfVm.Push(compile.Number(target.Length()))
 			selfVm.Pc++
 		case compile.OPCODE_ARRAY_PUSH:
 			elem := selfVm.Pop()
@@ -715,7 +760,7 @@ func VMRun(vm *Closure) {
 			}
 			target := selfVm.Pop().(*compile.NativeHashMap)
 
-			val, ok := target.Get(key.(compile.Str).GetSymbolIndex())
+			val, ok := target.Get(uint64(key.(compile.Str)))
 			if !ok {
 				selfVm.Push(defaultVal)
 			} else {
@@ -744,7 +789,7 @@ func VMRun(vm *Closure) {
 				goto ESCAPE
 			}
 			target := selfVm.Pop().(*compile.NativeHashMap)
-			selfVm.Push(compile.NewInt(target.Length()))
+			selfVm.Push(compile.Number(target.Length()))
 			selfVm.Pc++
 		case compile.OPCODE_MAP_KEYS:
 			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeNativeHashmap {
@@ -821,7 +866,7 @@ func VMRun(vm *Closure) {
 			var convArr = make([]compile.SExpression, len(splitted))
 
 			for i := 0; i < len(splitted); i++ {
-				convArr[i] = compile.NewString(vm.CompilerEnv.GetCompilerSymbol(splitted[i]))
+				convArr[i] = compile.Str(vm.CompilerEnv.GetCompilerSymbol(splitted[i]))
 			}
 
 			arr := compile.NewNativeArray(vm.CompilerEnv, convArr)
@@ -857,10 +902,10 @@ func VMRun(vm *Closure) {
 
 			joined := strings.Join(conv, sep)
 
-			selfVm.Push(compile.NewString(vm.CompilerEnv.GetCompilerSymbol(joined)))
+			selfVm.Push(compile.Str(vm.CompilerEnv.GetCompilerSymbol(joined)))
 			selfVm.Pc++
 		case compile.OPCODE_GET_NOW_TIME_NANO:
-			selfVm.Push(compile.NewInt(time.Now().UnixNano()))
+			selfVm.Push(compile.Number(time.Now().UnixNano()))
 			selfVm.Pc++
 		case compile.OPCODE_READ_FILE:
 			pathRaw := selfVm.Pop()
@@ -890,7 +935,7 @@ func VMRun(vm *Closure) {
 				fmt.Println("file read err: ", err)
 				goto ESCAPE
 			}
-			selfVm.Push(compile.NewString(vm.CompilerEnv.GetCompilerSymbol(string(fileContent))))
+			selfVm.Push(compile.Str(vm.CompilerEnv.GetCompilerSymbol(string(fileContent))))
 			selfVm.Pc++
 		default:
 			fmt.Println("unknown opcode: ", code)
@@ -908,6 +953,8 @@ ESCAPE:
 			}
 			selfVm = selfVm.ReturnCont
 		}
+		for !atomic.CompareAndSwapUint32(&globalEnvMutex, 1, 0) {
+		}
 	}
 }
 
@@ -921,14 +968,6 @@ func (vm *Closure) Pop() compile.SExpression {
 
 func (vm *Closure) Peek() compile.SExpression {
 	return vm.Stack.Peek()
-}
-
-func (vm *Closure) SetEnv(env *Env) {
-	vm.Env = env
-}
-
-func (vm *Closure) GetEnv() *Env {
-	return vm.Env
 }
 
 func (vm *Closure) SetCont(cont *Closure) {

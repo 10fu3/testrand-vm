@@ -32,17 +32,21 @@ func IsNativeFunc(compEnv *CompilerEnvironment, sexp SExpression) bool {
 	return true
 }
 
-func GenerateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStartLine int64) ([]Instr, int64, error) {
-	codes, leng, err := _generateOpCode(compileEnv, sexp, nowStartLine)
+func GenerateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStartLine int64, currentEnvIndex uint64) ([]Instr, int64, error) {
+	codes, leng, err := _generateOpCode(compileEnv, sexp, nowStartLine, currentEnvIndex)
 	//return append(codes, NewSymbol("end-code")), leng + 1
 	return append(codes, CreateEndCodeInstr()), leng + 1, err
 }
 
-func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStartLine int64) ([]Instr, int64, error) {
+func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStartLine int64, currentEnvIndex uint64) ([]Instr, int64, error) {
 	switch sexp.SExpressionTypeId() {
 	case SExpressionTypeSymbol:
 		i := compileEnv.GetCompilerSymbol(sexp.(Symbol).String(compileEnv))
-		return []Instr{CreatePushSymbolInstr(i), CreateLoadInstr()}, 2, nil
+		envId, symId, err := compileEnv.FindSymbolIndexInEnvironment(currentEnvIndex, i)
+		if err != nil {
+			return nil, 0, err
+		}
+		return []Instr{CreateLoadInstr(envId, symId)}, 1, nil
 	case SExpressionTypeNumber:
 		//return []SExpression{NewSymbol(fmt.Sprintf("push-num %s", sexp.String()))}, 1
 		return []Instr{CreatePushNumberInstr(sexp.(Number).GetValue())}, 1, nil
@@ -61,7 +65,7 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 	label := cell.GetCar()
 
 	if SExpressionTypeSymbol != label.SExpressionTypeId() {
-		carOpCode, carAffectedCode, err := _generateOpCode(compileEnv, cell.GetCar(), nowStartLine)
+		carOpCode, carAffectedCode, err := _generateOpCode(compileEnv, cell.GetCar(), nowStartLine, currentEnvIndex)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -70,7 +74,7 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 		}
 
 		_, argsLen := ToArraySexp(cell.GetCdr())
-		cdrOpCode, cdrAffectedCode, err := _generateOpCode(compileEnv, cell.GetCdr(), nowStartLine+carAffectedCode)
+		cdrOpCode, cdrAffectedCode, err := _generateOpCode(compileEnv, cell.GetCdr(), nowStartLine+carAffectedCode, currentEnvIndex)
 		//return append(append(cdrOpCode, carOpCode...), NewSymbol(fmt.Sprintf("call %d", argsLen))), carAffectedCode + cdrAffectedCode + 1
 		return append(append(cdrOpCode, carOpCode...), CreateCallInstr(argsLen)), carAffectedCode + cdrAffectedCode + 1, nil
 	}
@@ -103,7 +107,7 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 		var lineNum = nowStartLine
 		var addedRows = int64(0)
 		for i := int64(0); i < bodiesSize; i++ {
-			bodiesOpCodes, affectedOpCodeLine, err := _generateOpCode(compileEnv, bodies[i], lineNum)
+			bodiesOpCodes, affectedOpCodeLine, err := _generateOpCode(compileEnv, bodies[i], lineNum, currentEnvIndex)
 			if err != nil {
 				return nil, 0, err
 			}
@@ -142,13 +146,13 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 			condSexp := condAndBodyCellArr[0]
 			bodySexp := condAndBodyCellArr[1]
 
-			condOpCodes, condAffectedCode, err := _generateOpCode(compileEnv, condSexp, nowLine)
+			condOpCodes, condAffectedCode, err := _generateOpCode(compileEnv, condSexp, nowLine, currentEnvIndex)
 
 			if err != nil {
 				return nil, 0, err
 			}
 
-			bodyOpCodes, bodyAffectedCode, err := _generateOpCode(compileEnv, bodySexp, nowLine+condAffectedCode+1)
+			bodyOpCodes, bodyAffectedCode, err := _generateOpCode(compileEnv, bodySexp, nowLine+condAffectedCode+1, currentEnvIndex)
 
 			if err != nil {
 				return nil, 0, err
@@ -201,7 +205,7 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 		affectedCode := nowStartLine
 
 		for i := int64(0); i < condLen; i++ {
-			condOpCodes, condAffectedCode, err := _generateOpCode(compileEnv, cond[i], affectedCode)
+			condOpCodes, condAffectedCode, err := _generateOpCode(compileEnv, cond[i], affectedCode, currentEnvIndex)
 			if err != nil {
 				return nil, 0, err
 			}
@@ -226,7 +230,7 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 		affectedCode := nowStartLine
 
 		for i := int64(0); i < condLen; i++ {
-			condOpCodes, condAffectedCode, err := _generateOpCode(compileEnv, cond[i], affectedCode)
+			condOpCodes, condAffectedCode, err := _generateOpCode(compileEnv, cond[i], affectedCode, currentEnvIndex)
 			if err != nil {
 				return nil, 0, err
 			}
@@ -245,8 +249,8 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 		}
 		symbol := cellArr[0]
 		value := cellArr[1]
-
-		opCodes, affectedCode, err := _generateOpCode(compileEnv, value, nowStartLine)
+		envIndex, symbolIndex, err := compileEnv.FindSymbolIndexInEnvironment(currentEnvIndex, symbol.(Symbol).GetSymbolIndex())
+		opCodes, affectedCode, err := _generateOpCode(compileEnv, value, nowStartLine, currentEnvIndex)
 
 		if err != nil {
 			return nil, 0, err
@@ -257,7 +261,12 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 		}
 
 		//opCodes = append(opCodes, NewSymbol(fmt.Sprintf("set %s", symbol.(Symbol).GetSymbolIndex())))
-		opCodes = append(opCodes, CreateSetInstr(symbol.(Symbol).GetSymbolIndex()))
+
+		if err != nil {
+			return nil, 0, err
+		}
+
+		opCodes = append(opCodes, CreateSetInstr(envIndex, symbolIndex))
 
 		return opCodes, affectedCode + 1, nil
 	case "define":
@@ -266,8 +275,8 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 		}
 		symbol := cellArr[0]
 		value := cellArr[1]
-
-		opCodes, affectedCode, err := _generateOpCode(compileEnv, value, nowStartLine)
+		tableSymbolIndex := compileEnv.AddSymbolToEnvironment(currentEnvIndex, symbol.(Symbol).GetSymbolIndex())
+		opCodes, affectedCode, err := _generateOpCode(compileEnv, value, nowStartLine, currentEnvIndex)
 
 		if err != nil {
 			return nil, 0, err
@@ -278,7 +287,7 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 		}
 
 		//opCodes = append(opCodes, NewSymbol(fmt.Sprintf("define %s", symbol.(Symbol).GetSymbolIndex())))
-		opCodes = append(opCodes, CreateDefineInstr(symbol.(Symbol).GetSymbolIndex()))
+		opCodes = append(opCodes, CreateDefineInstr(currentEnvIndex, tableSymbolIndex))
 
 		return opCodes, affectedCode + 1, nil
 
@@ -288,15 +297,18 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 		}
 
 		//opCode := []SExpression{NewSymbol("new-env")}
-		opCode := []Instr{CreateNewEnvInstr()}
+		newEnvIndex := compileEnv.GetNewEnvironmentIndex()
+		compileEnv.AddEnvironmentToEnvironment(currentEnvIndex, newEnvIndex)
+		opCode := []Instr{CreateNewEnvInstr(currentEnvIndex, newEnvIndex)}
 		opCodeLine := nowStartLine + 1
 
 		//(a b c)
 		vars, varslen := ToArraySexp(cellArr[0])
 
 		for i := int64(0); i < varslen; i++ {
+			tableSymbolIndex := compileEnv.AddSymbolToEnvironment(newEnvIndex, vars[i].(Symbol).GetSymbolIndex())
 			//opCode = append(opCode, NewSymbol(fmt.Sprintf("define-args %s", vars[i].(Symbol).GetSymbolIndex())))
-			opCode = append(opCode, CreateDefineArgsInstr(vars[i].(Symbol).GetSymbolIndex()))
+			opCode = append(opCode, CreateDefineArgsInstr(newEnvIndex, tableSymbolIndex))
 			opCodeLine += 1
 		}
 
@@ -308,7 +320,7 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 		createFuncOpCodeLine := opCodeLine
 		opCodeLine += 1
 
-		funcOpCode, funcOpCodeAffectLow, err := _generateOpCode(compileEnv, rawBody, 0)
+		funcOpCode, funcOpCodeAffectLow, err := _generateOpCode(compileEnv, rawBody, 0, newEnvIndex)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -335,12 +347,12 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 		//cond|jmp-else|body|jmp|...
 
 		startIndex := nowStartLine
-		condOpCode, condAffectedCode, err := _generateOpCode(compileEnv, cond, nowStartLine)
+		condOpCode, condAffectedCode, err := _generateOpCode(compileEnv, cond, nowStartLine, currentEnvIndex)
 		if err != nil {
 			return nil, 0, err
 		}
 
-		bodyOpCode, bodyAffectedCode, err := _generateOpCode(compileEnv, body, nowStartLine+condAffectedCode+1)
+		bodyOpCode, bodyAffectedCode, err := _generateOpCode(compileEnv, body, nowStartLine+condAffectedCode+1, currentEnvIndex)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -370,7 +382,7 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 	var cdrOpCode []Instr
 	affectedCdrOpeCodeRowCount := nowStartLine
 	for i := int64(0); i < argsLen; i++ {
-		argsOpCode, argsOpCodeAffectedRowCount, err := _generateOpCode(compileEnv, args[i], affectedCdrOpeCodeRowCount)
+		argsOpCode, argsOpCodeAffectedRowCount, err := _generateOpCode(compileEnv, args[i], affectedCdrOpeCodeRowCount, currentEnvIndex)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -395,7 +407,7 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 		return append(cdrOpCode, carOpCode...), carAffectedCode + cdrAffectedCode, nil
 	} else {
 		var err error
-		carOpCode, carAffectedCode, err = _generateOpCode(compileEnv, cell.GetCar(), affectedCdrOpeCodeRowCount)
+		carOpCode, carAffectedCode, err = _generateOpCode(compileEnv, cell.GetCar(), affectedCdrOpeCodeRowCount, currentEnvIndex)
 		if err != nil {
 			return nil, 0, err
 		}
