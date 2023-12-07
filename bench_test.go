@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"runtime"
 	"strings"
 	"testing"
 	"testrand-vm/compile"
@@ -86,7 +85,6 @@ func BenchmarkIO(b *testing.B) {
 	if err := compileEnv.Compile(sexp); err != nil {
 		panic(err)
 	}
-	runtime.GC()
 	b.StartTimer()
 	vm.VMRunFromEntryPoint(runner)
 	b.StopTimer()
