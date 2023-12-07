@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"os"
-	"runtime"
-	"runtime/debug"
 	"strings"
 	"sync/atomic"
 	"testrand-vm/compile"
@@ -151,8 +149,6 @@ func NewVM(compEnv *compile.CompilerEnvironment) *Closure {
 }
 
 func VMRunFromEntryPoint(vm *Closure) {
-	runtime.GC()
-	debug.SetGCPercent(1500)
 	vm.Pc = 0
 	vm.Code = vm.CompilerEnv.GetInstr()
 	VMRun(vm)
@@ -269,7 +265,7 @@ func VMRun(vm *Closure) {
 				goto ESCAPE
 			}
 
-			for atomic.CompareAndSwapUint32(&env.IsLocked, 0, 1) {
+			for !atomic.CompareAndSwapUint32(&env.IsLocked, 0, 1) {
 			}
 
 			env.Frame[symIndexId] = &val
@@ -315,7 +311,7 @@ func VMRun(vm *Closure) {
 			}
 
 			val := selfVm.Pop()
-			for atomic.CompareAndSwapUint32(&env.IsLocked, 0, 1) {
+			for !atomic.CompareAndSwapUint32(&env.IsLocked, 0, 1) {
 			}
 			env.Frame[symId] = &val
 			atomic.StoreUint32(&env.IsLocked, 0)
