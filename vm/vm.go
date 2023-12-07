@@ -15,6 +15,7 @@ import (
 type Env struct {
 	SelfIndex uint64
 	Frame     map[uint64]*compile.SExpression
+	IsLocked  uint32
 }
 
 func (e *Env) TypeId() string {
@@ -267,7 +268,13 @@ func VMRun(vm *Closure) {
 				fmt.Println("not found env for define")
 				goto ESCAPE
 			}
+
+			for atomic.CompareAndSwapUint32(&env.IsLocked, 0, 1) {
+			}
+
 			env.Frame[symIndexId] = &val
+
+			atomic.StoreUint32(&env.IsLocked, 0)
 			//selfVm.Push(sym)
 			symId, err := vm.CompilerEnv.FindSymbolInEnvironment(envId, symIndexId)
 			if err != nil {
@@ -308,7 +315,10 @@ func VMRun(vm *Closure) {
 			}
 
 			val := selfVm.Pop()
+			for atomic.CompareAndSwapUint32(&env.IsLocked, 0, 1) {
+			}
 			env.Frame[symId] = &val
+			atomic.StoreUint32(&env.IsLocked, 0)
 			selfVm.Push(val)
 			selfVm.Pc++
 		//case "new-env":
@@ -319,6 +329,7 @@ func VMRun(vm *Closure) {
 			env := &Env{
 				SelfIndex: envId,
 				Frame:     make(map[uint64]*compile.SExpression),
+				IsLocked:  0,
 			}
 
 			SetEnv(envId, env)
