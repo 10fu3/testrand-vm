@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"os"
+	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync/atomic"
 	"testrand-vm/compile"
@@ -148,6 +150,8 @@ func NewVM(compEnv *compile.CompilerEnvironment) *Closure {
 }
 
 func VMRunFromEntryPoint(vm *Closure) {
+	runtime.GC()
+	debug.SetGCPercent(1500)
 	vm.Pc = 0
 	vm.Code = vm.CompilerEnv.GetInstr()
 	VMRun(vm)

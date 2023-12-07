@@ -1,7 +1,6 @@
 package compile
 
 import (
-	"encoding/binary"
 	"errors"
 	"sync/atomic"
 )
@@ -81,49 +80,49 @@ func (c *CompilerEnvironment) Compile(sexp SExpression) error {
 	return nil
 }
 
-func (c *CompilerEnvironment) Serialize() []byte {
-
-	body := Serialize(c.instr)
-
-	totalSymbolSize := uint64(8)
-
-	for i := uint64(0); i < symbolTable.symbolCount+1; i++ {
-		totalSymbolSize += 8 + uint64(len(symbolTable.reverseSymbolMap[i]))
-	}
-
-	b := make([]byte, totalSymbolSize+uint64(len(body)))
-	binary.LittleEndian.PutUint64(b, symbolTable.symbolCount)
-	byteIndex := uint64(8)
-
-	for i := uint64(0); i < symbolTable.symbolCount+1; i++ {
-		//symbolBody := make([]byte, 8+uint64(len(c.reverseSymbolMap[i])))
-		symbolBody := b[byteIndex:]
-		binary.LittleEndian.PutUint64(symbolBody, uint64(len(symbolTable.reverseSymbolMap[i])))
-		byteIndex += 8
-		copy(b[8:], symbolTable.reverseSymbolMap[i])
-		byteIndex += uint64(len(symbolTable.reverseSymbolMap[i]))
-	}
-
-	copy(b[byteIndex:], body)
-
-	return b
-}
-
-func DeserializeCompileEnvironment(b []byte) *CompilerEnvironment {
-	c := &CompilerEnvironment{}
-	symbolTable.symbolCount = binary.LittleEndian.Uint64(b)
-	byteIndex := uint64(8)
-
-	for i := uint64(0); i < symbolTable.symbolCount+1; i++ {
-		symbolLen := binary.LittleEndian.Uint64(b[byteIndex:])
-		byteIndex += 8
-		symbolTable.reverseSymbolMap[i] = string(b[byteIndex : byteIndex+symbolLen])
-		byteIndex += symbolLen
-	}
-
-	c.instr = DeserializeInstructions(b[byteIndex:])
-	return c
-}
+//func (c *CompilerEnvironment) Serialize() []byte {
+//
+//	body := Serialize(c.instr)
+//
+//	totalSymbolSize := uint64(8)
+//
+//	for i := uint64(0); i < symbolTable.symbolCount+1; i++ {
+//		totalSymbolSize += 8 + uint64(len(symbolTable.reverseSymbolMap[i]))
+//	}
+//
+//	b := make([]byte, totalSymbolSize+uint64(len(body)))
+//	binary.LittleEndian.PutUint64(b, symbolTable.symbolCount)
+//	byteIndex := uint64(8)
+//
+//	for i := uint64(0); i < symbolTable.symbolCount+1; i++ {
+//		//symbolBody := make([]byte, 8+uint64(len(c.reverseSymbolMap[i])))
+//		symbolBody := b[byteIndex:]
+//		binary.LittleEndian.PutUint64(symbolBody, uint64(len(symbolTable.reverseSymbolMap[i])))
+//		byteIndex += 8
+//		copy(b[8:], symbolTable.reverseSymbolMap[i])
+//		byteIndex += uint64(len(symbolTable.reverseSymbolMap[i]))
+//	}
+//
+//	copy(b[byteIndex:], body)
+//
+//	return b
+//}
+//
+//func DeserializeCompileEnvironment(b []byte) *CompilerEnvironment {
+//	c := &CompilerEnvironment{}
+//	symbolTable.symbolCount = binary.LittleEndian.Uint64(b)
+//	byteIndex := uint64(8)
+//
+//	for i := uint64(0); i < symbolTable.symbolCount+1; i++ {
+//		symbolLen := binary.LittleEndian.Uint64(b[byteIndex:])
+//		byteIndex += 8
+//		symbolTable.reverseSymbolMap[i] = string(b[byteIndex : byteIndex+symbolLen])
+//		byteIndex += symbolLen
+//	}
+//
+//	c.instr = DeserializeInstructions(b[byteIndex:])
+//	return c
+//}
 
 func (c *CompilerEnvironment) GetInstr() []Instr {
 	return c.instr
