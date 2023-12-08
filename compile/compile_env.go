@@ -6,7 +6,16 @@ import (
 )
 
 type CompilerEnvironment struct {
-	instr []Instr
+	instr               []Instr
+	_compileEnvIndex    uint64
+	_compileEnvRelation map[uint64]*struct {
+		hasParent             bool
+		parent                uint64
+		table                 map[uint64]uint64
+		tableSymbolToSymbolId map[uint64]uint64
+		tableSymbolCount      uint64
+		lock                  uint32
+	}
 }
 
 type SymbolTable struct {
@@ -42,28 +51,19 @@ func (s *SymbolTable) GetSymbolById(symbolId uint64) string {
 	return ""
 }
 
-var _compileEnvIndex uint64 = 0
-
-var _compileEnvRelation = map[uint64]*struct {
-	hasParent             bool
-	parent                uint64
-	table                 map[uint64]uint64
-	tableSymbolToSymbolId map[uint64]uint64
-	tableSymbolCount      uint64
-	lock                  uint32
-}{
-	0: {
-		hasParent:             false,
-		parent:                0,
-		table:                 map[uint64]uint64{},
-		tableSymbolToSymbolId: map[uint64]uint64{},
-		tableSymbolCount:      0,
-	},
-}
-
 func NewCompileEnvironment() *CompilerEnvironment {
 	env := &CompilerEnvironment{
 		instr: []Instr{},
+		_compileEnvRelation: map[uint64]*struct {
+			hasParent             bool
+			parent                uint64
+			table                 map[uint64]uint64
+			tableSymbolToSymbolId map[uint64]uint64
+			tableSymbolCount      uint64
+			lock                  uint32
+		}{
+			0: {parent: 0, table: map[uint64]uint64{}, hasParent: false, tableSymbolCount: 0, tableSymbolToSymbolId: map[uint64]uint64{}, lock: 0},
+		},
 	}
 	return env
 }
@@ -138,7 +138,8 @@ func (c *CompilerEnvironment) GetCompilerSymbolString(symbol uint64) string {
 }
 
 func (c *CompilerEnvironment) GetNewEnvironmentIndex() uint64 {
-	return atomic.AddUint64(&_compileEnvIndex, 1)
+	val := atomic.AddUint64(&c._compileEnvIndex, 1)
+	return val - 1
 }
 
 func (c *CompilerEnvironment) FindSymbolIndexInEnvironment(env uint64, symbol uint64) (uint64, uint64, error) {
@@ -146,15 +147,15 @@ func (c *CompilerEnvironment) FindSymbolIndexInEnvironment(env uint64, symbol ui
 	currentEnvId := env
 
 	for {
-		if _, ok := _compileEnvRelation[currentEnvId]; !ok {
-			atomic.StoreUint32(&_compileEnvRelation[currentEnvId].lock, 0)
+		if _, ok := c._compileEnvRelation[currentEnvId]; !ok {
+			atomic.StoreUint32(&c._compileEnvRelation[currentEnvId].lock, 0)
 			return 0, 0, errors.New("env not found")
 		}
-		for atomic.CompareAndSwapUint32(&_compileEnvRelation[currentEnvId].lock, 0, 1) == false {
+		for atomic.CompareAndSwapUint32(&c._compileEnvRelation[currentEnvId].lock, 0, 1) == false {
 		}
-		reR := _compileEnvRelation[currentEnvId]
+		reR := c._compileEnvRelation[currentEnvId]
 		if index, ok := reR.tableSymbolToSymbolId[symbol]; ok {
-			atomic.StoreUint32(&_compileEnvRelation[currentEnvId].lock, 0)
+			atomic.StoreUint32(&c._compileEnvRelation[currentEnvId].lock, 0)
 			return currentEnvId, index, nil
 		}
 		if reR.hasParent == false {
@@ -163,8 +164,8 @@ func (c *CompilerEnvironment) FindSymbolIndexInEnvironment(env uint64, symbol ui
 		if currentEnvId == 0 {
 			return 0, 0, errors.New("symbol not found")
 		}
-		parent := _compileEnvRelation[currentEnvId].parent
-		atomic.StoreUint32(&_compileEnvRelation[currentEnvId].lock, 0)
+		parent := c._compileEnvRelation[currentEnvId].parent
+		atomic.StoreUint32(&c._compileEnvRelation[currentEnvId].lock, 0)
 		currentEnvId = parent
 	}
 }
@@ -174,15 +175,15 @@ func (c *CompilerEnvironment) FindSymbolInEnvironment(env uint64, symbolIndex ui
 	currentEnvId := env
 
 	for {
-		for atomic.CompareAndSwapUint32(&_compileEnvRelation[currentEnvId].lock, 0, 1) == false {
+		for atomic.CompareAndSwapUint32(&c._compileEnvRelation[currentEnvId].lock, 0, 1) == false {
 		}
-		if _, ok := _compileEnvRelation[currentEnvId]; !ok {
-			atomic.StoreUint32(&_compileEnvRelation[currentEnvId].lock, 0)
+		if _, ok := c._compileEnvRelation[currentEnvId]; !ok {
+			atomic.StoreUint32(&c._compileEnvRelation[currentEnvId].lock, 0)
 			return 0, errors.New("env not found")
 		}
-		reR := _compileEnvRelation[currentEnvId]
+		reR := c._compileEnvRelation[currentEnvId]
 		if symId, ok := reR.table[symbolIndex]; ok {
-			atomic.StoreUint32(&_compileEnvRelation[currentEnvId].lock, 0)
+			atomic.StoreUint32(&c._compileEnvRelation[currentEnvId].lock, 0)
 			return symId, nil
 		}
 		if reR.hasParent == false {
@@ -191,15 +192,15 @@ func (c *CompilerEnvironment) FindSymbolInEnvironment(env uint64, symbolIndex ui
 		if currentEnvId == 0 {
 			return 0, errors.New("symbol not found")
 		}
-		parent := _compileEnvRelation[currentEnvId].parent
-		atomic.StoreUint32(&_compileEnvRelation[currentEnvId].lock, 0)
+		parent := c._compileEnvRelation[currentEnvId].parent
+		atomic.StoreUint32(&c._compileEnvRelation[currentEnvId].lock, 0)
 		currentEnvId = parent
 	}
 }
 
 func (c *CompilerEnvironment) AddEnvironmentToEnvironment(parentEnv uint64, env uint64) {
-	if _, ok := _compileEnvRelation[env]; !ok {
-		_compileEnvRelation[env] = &struct {
+	if _, ok := c._compileEnvRelation[env]; !ok {
+		c._compileEnvRelation[env] = &struct {
 			hasParent             bool
 			parent                uint64
 			table                 map[uint64]uint64
@@ -208,15 +209,16 @@ func (c *CompilerEnvironment) AddEnvironmentToEnvironment(parentEnv uint64, env 
 			lock                  uint32
 		}{parent: parentEnv, table: map[uint64]uint64{}, hasParent: true, tableSymbolCount: 0, tableSymbolToSymbolId: map[uint64]uint64{}, lock: 0}
 	}
+	panic("found env")
 }
 
 func (c *CompilerEnvironment) AddSymbolToEnvironment(env uint64, symbol uint64) uint64 {
-	for atomic.CompareAndSwapUint32(&_compileEnvRelation[env].lock, 0, 1) == false {
+	for atomic.CompareAndSwapUint32(&c._compileEnvRelation[env].lock, 0, 1) == false {
 	}
-	index := _compileEnvRelation[env].tableSymbolCount
-	_compileEnvRelation[env].table[index] = symbol
-	_compileEnvRelation[env].tableSymbolToSymbolId[symbol] = index
-	_compileEnvRelation[env].tableSymbolCount = index + 1
-	atomic.StoreUint32(&_compileEnvRelation[env].lock, 0)
+	index := c._compileEnvRelation[env].tableSymbolCount
+	c._compileEnvRelation[env].table[index] = symbol
+	c._compileEnvRelation[env].tableSymbolToSymbolId[symbol] = index
+	c._compileEnvRelation[env].tableSymbolCount = index + 1
+	atomic.StoreUint32(&c._compileEnvRelation[env].lock, 0)
 	return index
 }
