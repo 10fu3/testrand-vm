@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	"os"
@@ -37,6 +38,7 @@ func (e *Env) Equals(sexp compile.SExpression) bool {
 }
 
 type Closure struct {
+	GlobalEnvId   string
 	EnvId         uint64
 	CompilerEnv   *compile.CompilerEnvironment
 	Stack         SexpStack
@@ -46,6 +48,7 @@ type Closure struct {
 	ReturnCont    *Closure
 	ReturnPc      int64
 	TemporaryArgs []compile.Symbol
+	Result        compile.SExpression
 }
 
 type SexpStack struct {
@@ -114,8 +117,8 @@ func (vm *Closure) Equals(sexp compile.SExpression) bool {
 	panic("implement me")
 }
 
-var globalEnv = []Env{
-	{
+var globalEnv = map[uint64]Env{
+	0: {
 		SelfIndex: 0,
 		Frame:     map[uint64]*compile.SExpression{},
 	},
@@ -123,22 +126,25 @@ var globalEnv = []Env{
 
 var globalEnvMutex = uint32(0)
 
-func GetEnv(envId uint64) (*Env, bool) {
-	if envId >= uint64(len(globalEnv)) {
-		return nil, false
+func AtomicControlEnv(f func(map[uint64]Env) error) error {
+	for !atomic.CompareAndSwapUint32(&globalEnvMutex, 0, 1) {
 	}
-	return &globalEnv[envId], true
-}
-
-func SetEnv(index uint64, env *Env) {
-	if index >= uint64(len(globalEnv)) {
-		globalEnv = append(globalEnv, make([]Env, index-uint64(len(globalEnv))+1)...)
-	}
-	globalEnv[index] = *env
+	defer atomic.StoreUint32(&globalEnvMutex, 0)
+	return f(globalEnv)
 }
 
 func NewVM(compEnv *compile.CompilerEnvironment) *Closure {
 	return &Closure{
+		CompilerEnv: compEnv,
+		Stack:       NewSexpStack(),
+		Pc:          0,
+		Cont:        nil,
+	}
+}
+
+func NewVMWithGlobalEnvId(compEnv *compile.CompilerEnvironment, globalEnvId string) *Closure {
+	return &Closure{
+		GlobalEnvId: globalEnvId,
 		CompilerEnv: compEnv,
 		Stack:       NewSexpStack(),
 		Pc:          0,
@@ -153,10 +159,7 @@ func VMRunFromEntryPoint(vm *Closure) {
 	vm.Code = nil
 }
 
-func VMRun(vm *Closure) {
-
-	for !atomic.CompareAndSwapUint32(&globalEnvMutex, 0, 1) {
-	}
+func VMRun(vm *Closure) compile.SExpression {
 
 	selfVm := vm
 
@@ -241,14 +244,20 @@ func VMRun(vm *Closure) {
 
 			envId, symId := compile.DeserializeLoadInstr(vm.CompilerEnv, code)
 
-			loaded, ok := GetEnv(envId)
+			err := AtomicControlEnv(func(env map[uint64]Env) error {
+				loaded, ok := env[envId]
+				if !ok {
+					return fmt.Errorf("not found")
+				}
+				selfVm.Push(*loaded.Frame[symId])
+				return nil
+			})
 
-			if !ok {
-				fmt.Println("not found")
+			if err != nil {
+				fmt.Println(err)
 				goto ESCAPE
 			}
 
-			selfVm.Push(*loaded.Frame[symId])
 			selfVm.Pc++
 
 		//case "define":
@@ -256,20 +265,11 @@ func VMRun(vm *Closure) {
 			//sym := reader.NewSymbol(opCodeAndArgs[1])
 			envId, symIndexId := compile.DeserializeDefineInstr(vm.CompilerEnv, code)
 			val := selfVm.Pop()
-			//selfVm.Env.Frame[opCodeAndArgs[1]] = &val
-			env, ok := GetEnv(envId)
-			if !ok {
-				fmt.Println("not found env for define")
-				goto ESCAPE
-			}
 
-			for !atomic.CompareAndSwapUint32(&env.IsLocked, 0, 1) {
-			}
-
-			env.Frame[symIndexId] = &val
-
-			atomic.StoreUint32(&env.IsLocked, 0)
-			//selfVm.Push(sym)
+			AtomicControlEnv(func(env map[uint64]Env) error {
+				env[envId].Frame[symIndexId] = &val
+				return nil
+			})
 			symId, err := vm.CompilerEnv.FindSymbolInEnvironment(envId, symIndexId)
 			if err != nil {
 				fmt.Println(err)
@@ -301,18 +301,11 @@ func VMRun(vm *Closure) {
 		case compile.OPCODE_SET:
 			//sym := reader.NewSymbol(opCodeAndArgs[1])
 			envId, symId := compile.DeserializeSetInstr(vm.CompilerEnv, code)
-
-			env, ok := GetEnv(envId)
-			if !ok {
-				fmt.Println("not found")
-				goto ESCAPE
-			}
-
 			val := selfVm.Pop()
-			for !atomic.CompareAndSwapUint32(&env.IsLocked, 0, 1) {
-			}
-			env.Frame[symId] = &val
-			atomic.StoreUint32(&env.IsLocked, 0)
+			AtomicControlEnv(func(env map[uint64]Env) error {
+				env[envId].Frame[symId] = &val
+				return nil
+			})
 			selfVm.Push(val)
 			selfVm.Pc++
 		//case "new-env":
@@ -320,15 +313,18 @@ func VMRun(vm *Closure) {
 
 			_, envId := compile.DeserializeNewEnvInstr(vm.CompilerEnv, code)
 
-			env := &Env{
+			newEnv := Env{
 				SelfIndex: envId,
 				Frame:     make(map[uint64]*compile.SExpression),
 				IsLocked:  0,
 			}
 
-			SetEnv(envId, env)
+			AtomicControlEnv(func(env map[uint64]Env) error {
+				env[envId] = newEnv
+				return nil
+			})
 
-			selfVm.Push(env)
+			selfVm.Push(&newEnv)
 			selfVm.Pc++
 		//case "create-lambda":
 		case compile.OPCODE_CREATE_CLOSURE:
@@ -368,23 +364,29 @@ func VMRun(vm *Closure) {
 
 			nextVm := rawClosure.(*Closure)
 			nextEnvId := nextVm.EnvId
-			env, ok := GetEnv(nextEnvId)
 
-			if !ok {
-				fmt.Println("not found")
+			if err := AtomicControlEnv(func(env map[uint64]Env) error {
+				newEnv, ok := env[nextEnvId]
+
+				if !ok {
+					return errors.New("not found")
+				}
+
+				argsSize := compile.DeserializeCallInstr(vm.CompilerEnv, code)
+
+				if argsSize != int64(len(nextVm.TemporaryArgs)) {
+					return errors.New("args size not match")
+				}
+				for _, sym := range nextVm.TemporaryArgs {
+					val := selfVm.Pop()
+					newEnv.Frame[sym.GetSymbolIndex()] = &val
+				}
+				return nil
+			}); err != nil {
+				fmt.Println(err)
 				goto ESCAPE
 			}
 
-			argsSize := compile.DeserializeCallInstr(vm.CompilerEnv, code)
-
-			if argsSize != int64(len(nextVm.TemporaryArgs)) {
-				fmt.Println("args size not match")
-				goto ESCAPE
-			}
-			for _, sym := range nextVm.TemporaryArgs {
-				val := selfVm.Pop()
-				env.Frame[uint64(sym)] = &val
-			}
 			nextVm.ReturnCont = selfVm
 			nextVm.ReturnPc = selfVm.Pc
 			selfVm = nextVm
@@ -858,12 +860,12 @@ func VMRun(vm *Closure) {
 				callBack := callBackRaw.(*Closure)
 				sendBody := selfVm.Pop()
 				//send to heavy
-				GetSupervisor().AddTaskTaskWithCallback(sendBody, callBack)
+				GetSupervisor().AddTaskTaskWithCallback(vm.CompilerEnv, sendBody, callBack)
 			}
 			if argsLen == 1 {
 				sendBody := selfVm.Pop()
 				//send to heavy
-				GetSupervisor().AddTask(sendBody)
+				GetSupervisor().AddTask(vm.CompilerEnv, sendBody)
 			}
 			//selfVm.Push(compile.NewString(vm.CompilerEnv, "somethin-uuid"))
 			selfVm.Pc++
@@ -982,9 +984,8 @@ ESCAPE:
 			}
 			selfVm = selfVm.ReturnCont
 		}
-		for !atomic.CompareAndSwapUint32(&globalEnvMutex, 1, 0) {
-		}
 	}
+	return vm.Result
 }
 
 func (vm *Closure) Push(sexp compile.SExpression) {
