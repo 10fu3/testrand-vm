@@ -120,7 +120,6 @@ var globalEnv = []Env{
 		Frame:     map[uint64]*compile.SExpression{},
 	},
 }
-var globalEnvLen = uint64(0)
 
 var globalEnvMutex = uint32(0)
 
@@ -133,7 +132,6 @@ func GetEnv(envId uint64) (*Env, bool) {
 
 func SetEnv(index uint64, env *Env) {
 	if index >= uint64(len(globalEnv)) {
-		globalEnvLen = index + 1
 		globalEnv = append(globalEnv, make([]Env, index-uint64(len(globalEnv))+1)...)
 	}
 	globalEnv[index] = *env
