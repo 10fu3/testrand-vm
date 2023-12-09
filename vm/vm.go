@@ -345,9 +345,8 @@ func VMRun(vm *Closure) compile.SExpression {
 		case compile.OPCODE_AND:
 			//argsSize, _ := strconv.ParseInt(opCodeAndArgs[1], 10, 64)
 			argsSize := compile.DeserializeAndInstr(vm.CompilerEnv, code)
-			val := selfVm.Stack.Pop().(compile.Bool)
+			val, ok := selfVm.Stack.Pop().(compile.Bool)
 			var tmp compile.Bool
-			var ok bool
 			flag := true
 			for i := int64(1); i < argsSize; i++ {
 				if !ok {
