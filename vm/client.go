@@ -158,7 +158,7 @@ func (s *Supervisor) sendSingleSexpToServer(taskId TaskId, sendTask compile.SExp
 @return: タスクID
 */
 
-func (s *Supervisor) AddTaskTaskWithCallback(comp *compile.CompilerEnvironment, sendTask compile.SExpression, onComplete *Closure) TaskId {
+func (s *Supervisor) AddTaskWithCallback(sendTask compile.SExpression, onComplete *Closure) TaskId {
 	taskId := TaskId(uuid.NewString())
 	s.sendSingleSexpToServer(taskId, sendTask)
 	s.Mutex.Lock()
