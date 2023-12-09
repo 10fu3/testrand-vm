@@ -17,6 +17,32 @@ type CompilerEnvironment struct {
 		children              []uint64
 		tableSymbolCount      uint64
 	}
+	GlobalEnv []RuntimeEnv
+}
+
+type RuntimeEnv struct {
+	SelfIndex uint64
+	Frame     map[uint64]SExpression
+}
+
+func (e RuntimeEnv) TypeId() string {
+	return "environment"
+}
+
+func (e RuntimeEnv) SExpressionTypeId() SExpressionType {
+	return SExpressionTypeEnvironment
+}
+
+func (e RuntimeEnv) String(env *CompilerEnvironment) string {
+	return "environment"
+}
+
+func (e RuntimeEnv) IsList() bool {
+	return false
+}
+
+func (e RuntimeEnv) Equals(sexp SExpression) bool {
+	panic("implement me")
 }
 
 type SymbolTable struct {
@@ -66,6 +92,12 @@ func NewCompileEnvironment() *CompilerEnvironment {
 			tableSymbolCount      uint64
 		}{
 			0: {parent: 0, table: map[uint64]uint64{}, hasParent: false, tableSymbolCount: 0, tableSymbolToSymbolId: map[uint64]uint64{}, children: []uint64{}},
+		},
+		GlobalEnv: []RuntimeEnv{
+			{
+				SelfIndex: 0,
+				Frame:     map[uint64]SExpression{},
+			},
 		},
 	}
 	return env
@@ -117,9 +149,11 @@ func (c *CompilerEnvironment) FindSymbolIndexInEnvironment(env uint64, symbol ui
 			return currentEnvId, index, nil
 		}
 		if reR.hasParent == false {
+			atomic.StoreUint32(&c._compileEnvLock, 0)
 			return 0, 0, errors.New("symbol not found")
 		}
 		if currentEnvId == 0 {
+			atomic.StoreUint32(&c._compileEnvLock, 0)
 			return 0, 0, errors.New("symbol not found")
 		}
 		parent := c._compileEnvRelation[currentEnvId].parent
