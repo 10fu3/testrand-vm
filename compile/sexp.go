@@ -3,7 +3,6 @@ package compile
 import (
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 )
@@ -152,7 +151,7 @@ func (s Str) IsList() bool {
 	return false
 }
 
-type Nil int8
+type Nil struct{}
 
 func (n Nil) Equals(sexp SExpression) bool {
 	return "nil" == sexp.TypeId()
@@ -174,26 +173,20 @@ func (n Nil) IsList() bool {
 	return false
 }
 
-var _nilInstance = Nil(math.MaxInt8 * -1)
+var _nilInstance = struct{}{}
 
 func NewNil() Nil {
 	return _nilInstance
 }
 
-type ConsCell interface {
-	SExpression
-	GetCar() SExpression
-	GetCdr() SExpression
-}
-
-type _cons_cell struct {
+type ConsCell struct {
 	Car     SExpression
 	Cdr     SExpression
 	compEnv *CompilerEnvironment
 }
 
-func (cell *_cons_cell) Equals(sexp SExpression) bool {
-	if "cons_cell" != sexp.TypeId() {
+func (cell ConsCell) Equals(sexp SExpression) bool {
+	if SExpressionTypeConsCell != sexp.SExpressionTypeId() {
 		return false
 	}
 	c := sexp.(ConsCell)
@@ -204,73 +197,77 @@ func (cell *_cons_cell) Equals(sexp SExpression) bool {
 }
 
 func NewConsCell(car SExpression, cdr SExpression) ConsCell {
-	return &_cons_cell{
+	return ConsCell{
 		Car: car,
 		Cdr: cdr,
 	}
 }
 
-func JoinList(compEnv *CompilerEnvironment, left, right SExpression) (ConsCell, error) {
+//func JoinList(compEnv *CompilerEnvironment, left, right SExpression) (ConsCell, error) {
+//
+//	if !left.IsList() {
+//		return nil, errors.New("left is not a list")
+//	}
+//
+//	if !right.IsList() {
+//		return nil, errors.New("right is not a list")
+//	}
+//
+//	baseRoot := left.(*_cons_cell)
+//	baseLook := baseRoot
+//
+//	copyRoot := &_cons_cell{
+//		Car: NewNil(),
+//		Cdr: NewNil(),
+//	}
+//	copyLook := copyRoot
+//
+//	for {
+//		if IsEmptyList(baseLook.GetCdr()) {
+//			copyLook.Car = baseLook.GetCar()
+//			copyLook.Cdr = right
+//			return copyRoot, nil
+//		} else {
+//			copyLook.Car = baseLook.GetCar()
+//			copyLook.Cdr = NewConsCell(NewNil(), NewNil())
+//			copyLook = copyLook.Cdr.(*_cons_cell)
+//			baseLook = baseLook.GetCdr().(*_cons_cell)
+//		}
+//	}
+//}
 
-	if !left.IsList() {
-		return nil, errors.New("left is not a list")
-	}
-
-	if !right.IsList() {
-		return nil, errors.New("right is not a list")
-	}
-
-	baseRoot := left.(*_cons_cell)
-	baseLook := baseRoot
-
-	copyRoot := &_cons_cell{
-		Car: NewNil(),
-		Cdr: NewNil(),
-	}
-	copyLook := copyRoot
-
-	for {
-		if IsEmptyList(baseLook.GetCdr()) {
-			copyLook.Car = baseLook.GetCar()
-			copyLook.Cdr = right
-			return copyRoot, nil
-		} else {
-			copyLook.Car = baseLook.GetCar()
-			copyLook.Cdr = NewConsCell(NewNil(), NewNil())
-			copyLook = copyLook.Cdr.(*_cons_cell)
-			baseLook = baseLook.GetCdr().(*_cons_cell)
-		}
-	}
-}
-
-func (cell *_cons_cell) TypeId() string {
+func (cell ConsCell) TypeId() string {
 	return "cons_cell"
 }
 
-func (cell *_cons_cell) SExpressionTypeId() SExpressionType {
+func (cell ConsCell) SExpressionTypeId() SExpressionType {
 	return SExpressionTypeConsCell
 }
 
-func (cell *_cons_cell) String(compEnv *CompilerEnvironment) string {
-	if "symbol" == cell.Car.TypeId() && cell.compEnv.GetCompilerSymbol("quote") == ((cell.Car).(Symbol)).GetSymbolIndex() && cell.Cdr.TypeId() == "cons_cell" && "nil" == ((cell.Cdr).(ConsCell)).GetCdr().TypeId() {
+func (cell ConsCell) String(compEnv *CompilerEnvironment) string {
+	if SExpressionTypeSymbol == cell.Car.SExpressionTypeId() &&
+		cell.compEnv.GetCompilerSymbol("quote") == ((cell.Car).(Symbol)).GetSymbolIndex() &&
+		SExpressionTypeConsCell == cell.Cdr.SExpressionTypeId() &&
+		SExpressionTypeNil == ((cell.Cdr).(ConsCell)).GetCdr().SExpressionTypeId() {
 		return fmt.Sprintf("'%s", ((cell.Cdr).(ConsCell)).GetCar().String(compEnv))
 	}
 	var joinedString strings.Builder
 	joinedString.WriteString("(")
-	var lookCell ConsCell = cell
+	var lookCell = cell
 
 	for {
-		if lookCell.GetCar().TypeId() != "nil" {
+		if SExpressionTypeNil != lookCell.GetCar().SExpressionTypeId() {
 			joinedString.WriteString(lookCell.GetCar().String(compEnv))
-			if lookCell.GetCdr().TypeId() == "cons_cell" {
-				if lookCell.GetCdr().(ConsCell).GetCar().TypeId() != "nil" && lookCell.GetCdr().(ConsCell).GetCdr().TypeId() != "nil" {
+			if SExpressionTypeConsCell == lookCell.GetCdr().SExpressionTypeId() {
+				if SExpressionTypeNil != lookCell.GetCdr().(ConsCell).GetCar().SExpressionTypeId() &&
+					SExpressionTypeNil != lookCell.GetCdr().(ConsCell).GetCdr().SExpressionTypeId() {
 					joinedString.WriteString(" ")
 				}
 			}
 		}
 
-		if lookCell.GetCdr().TypeId() != "cons_cell" {
-			if lookCell.GetCdr().TypeId() != "nil" {
+		if SExpressionTypeConsCell != lookCell.GetCdr().SExpressionTypeId() {
+			if SExpressionTypeNil != lookCell.GetCdr().SExpressionTypeId() {
 				joinedString.WriteString(" . " + lookCell.GetCdr().String(compEnv))
 			}
 			joinedString.WriteString(")")
@@ -299,8 +296,8 @@ func (cell *_cons_cell) String(compEnv *CompilerEnvironment) string {
 //	return list, nil
 //}
 
-func (cell *_cons_cell) IsList() bool {
-	if "cons_cell" == cell.Cdr.TypeId() {
+func (cell ConsCell) IsList() bool {
+	if SExpressionTypeConsCell != cell.Cdr.SExpressionTypeId() {
 		if IsEmptyList(cell.Cdr) {
 			return true
 		}
@@ -309,11 +306,11 @@ func (cell *_cons_cell) IsList() bool {
 	return false
 }
 
-func (cell *_cons_cell) GetCar() SExpression {
+func (cell ConsCell) GetCar() SExpression {
 	return cell.Car
 }
 
-func (cell *_cons_cell) GetCdr() SExpression {
+func (cell ConsCell) GetCdr() SExpression {
 	return cell.Cdr
 }
 
@@ -335,12 +332,12 @@ func (cell *_cons_cell) GetCdr() SExpression {
 //}
 
 func IsEmptyList(list SExpression) bool {
-	if "cons_cell" != list.TypeId() {
+	if SExpressionTypeConsCell != list.SExpressionTypeId() {
 		return false
 	}
 	tmp := (list).(ConsCell)
 
-	return "nil" == tmp.GetCar().TypeId() && "nil" == tmp.GetCdr().TypeId()
+	return SExpressionTypeNil == tmp.GetCar().SExpressionTypeId() && SExpressionTypeNil == tmp.GetCdr().SExpressionTypeId()
 }
 
 type NativeArray struct {
@@ -425,7 +422,7 @@ func (h *NativeHashMap) String(compEnv *CompilerEnvironment) string {
 		if i != 0 {
 			joinedString.WriteString(" ")
 		}
-		joinedString.WriteString(fmt.Sprintf("%s: %v\n", k, elm))
+		joinedString.WriteString(fmt.Sprintf("%s: %v,\n", compEnv.GetCompilerSymbolString(k), elm.String(compEnv)))
 		i++
 	}
 	joinedString.WriteString("}")

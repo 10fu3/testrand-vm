@@ -94,7 +94,6 @@ func (s *Supervisor) StartCallbackReceiveServer() {
 		}
 
 		VMRun(vm)
-		vm = nil
 
 		c.Status(http.StatusOK)
 		return nil
