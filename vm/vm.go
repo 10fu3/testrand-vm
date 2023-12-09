@@ -1,7 +1,6 @@
 package vm
 
 import (
-	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	"os"
@@ -126,13 +125,6 @@ var globalEnv = map[uint64]Env{
 
 var globalEnvMutex = uint32(0)
 
-func AtomicControlEnv(f func(map[uint64]Env) error) error {
-	for !atomic.CompareAndSwapUint32(&globalEnvMutex, 0, 1) {
-	}
-	defer atomic.StoreUint32(&globalEnvMutex, 0)
-	return f(globalEnv)
-}
-
 func NewVM(compEnv *compile.CompilerEnvironment) *Closure {
 	return &Closure{
 		CompilerEnv: compEnv,
@@ -243,21 +235,15 @@ func VMRun(vm *Closure) compile.SExpression {
 		case compile.OPCODE_LOAD:
 
 			envId, symId := compile.DeserializeLoadInstr(vm.CompilerEnv, code)
-
-			err := AtomicControlEnv(func(env map[uint64]Env) error {
-				loaded, ok := env[envId]
-				if !ok {
-					return fmt.Errorf("not found")
-				}
-				selfVm.Push(*loaded.Frame[symId])
-				return nil
-			})
-
-			if err != nil {
-				fmt.Println(err)
+			for !atomic.CompareAndSwapUint32(&globalEnvMutex, 0, 1) {
+			}
+			loaded, ok := globalEnv[envId]
+			atomic.StoreUint32(&globalEnvMutex, 0)
+			if !ok {
+				fmt.Errorf("not found")
 				goto ESCAPE
 			}
-
+			selfVm.Push(*loaded.Frame[symId])
 			selfVm.Pc++
 
 		//case "define":
@@ -265,11 +251,10 @@ func VMRun(vm *Closure) compile.SExpression {
 			//sym := reader.NewSymbol(opCodeAndArgs[1])
 			envId, symIndexId := compile.DeserializeDefineInstr(vm.CompilerEnv, code)
 			val := selfVm.Pop()
-
-			AtomicControlEnv(func(env map[uint64]Env) error {
-				env[envId].Frame[symIndexId] = &val
-				return nil
-			})
+			for !atomic.CompareAndSwapUint32(&globalEnvMutex, 0, 1) {
+			}
+			globalEnv[envId].Frame[symIndexId] = &val
+			atomic.StoreUint32(&globalEnvMutex, 0)
 			symId, err := vm.CompilerEnv.FindSymbolInEnvironment(envId, symIndexId)
 			if err != nil {
 				fmt.Println(err)
@@ -302,10 +287,10 @@ func VMRun(vm *Closure) compile.SExpression {
 			//sym := reader.NewSymbol(opCodeAndArgs[1])
 			envId, symId := compile.DeserializeSetInstr(vm.CompilerEnv, code)
 			val := selfVm.Pop()
-			AtomicControlEnv(func(env map[uint64]Env) error {
-				env[envId].Frame[symId] = &val
-				return nil
-			})
+			for !atomic.CompareAndSwapUint32(&globalEnvMutex, 0, 1) {
+			}
+			globalEnv[envId].Frame[symId] = &val
+			atomic.StoreUint32(&globalEnvMutex, 0)
 			selfVm.Push(val)
 			selfVm.Pc++
 		//case "new-env":
@@ -318,11 +303,10 @@ func VMRun(vm *Closure) compile.SExpression {
 				Frame:     make(map[uint64]*compile.SExpression),
 				IsLocked:  0,
 			}
-
-			AtomicControlEnv(func(env map[uint64]Env) error {
-				env[envId] = newEnv
-				return nil
-			})
+			for !atomic.CompareAndSwapUint32(&globalEnvMutex, 0, 1) {
+			}
+			globalEnv[envId] = newEnv
+			atomic.StoreUint32(&globalEnvMutex, 0)
 
 			selfVm.Push(&newEnv)
 			selfVm.Pc++
@@ -364,27 +348,26 @@ func VMRun(vm *Closure) compile.SExpression {
 
 			nextVm := rawClosure.(*Closure)
 			nextEnvId := nextVm.EnvId
+			for !atomic.CompareAndSwapUint32(&globalEnvMutex, 0, 1) {
+			}
+			newEnv, ok := globalEnv[nextEnvId]
+			atomic.StoreUint32(&globalEnvMutex, 0)
 
-			if err := AtomicControlEnv(func(env map[uint64]Env) error {
-				newEnv, ok := env[nextEnvId]
-
-				if !ok {
-					return errors.New("not found")
-				}
-
-				argsSize := compile.DeserializeCallInstr(vm.CompilerEnv, code)
-
-				if argsSize != int64(len(nextVm.TemporaryArgs)) {
-					return errors.New("args size not match")
-				}
-				for _, sym := range nextVm.TemporaryArgs {
-					val := selfVm.Pop()
-					newEnv.Frame[sym.GetSymbolIndex()] = &val
-				}
-				return nil
-			}); err != nil {
-				fmt.Println(err)
+			if !ok {
+				fmt.Println("not found")
 				goto ESCAPE
+			}
+
+			argsSize := compile.DeserializeCallInstr(vm.CompilerEnv, code)
+
+			if argsSize != int64(len(nextVm.TemporaryArgs)) {
+				fmt.Println("args size not match")
+				goto ESCAPE
+			}
+
+			for _, sym := range nextVm.TemporaryArgs {
+				val := selfVm.Pop()
+				newEnv.Frame[sym.GetSymbolIndex()] = &val
 			}
 
 			nextVm.ReturnCont = selfVm
@@ -984,6 +967,7 @@ ESCAPE:
 			}
 			selfVm = selfVm.ReturnCont
 		}
+		atomic.StoreUint32(&globalEnvMutex, 0)
 	}
 	return vm.Result
 }
