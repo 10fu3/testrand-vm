@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	"os"
@@ -11,7 +12,6 @@ import (
 )
 
 type Closure struct {
-	GlobalEnvId   string
 	EnvId         uint64
 	CompilerEnv   *compile.CompilerEnvironment
 	Stack         SexpStack
@@ -22,6 +22,7 @@ type Closure struct {
 	ReturnPc      int64
 	TemporaryArgs []compile.Symbol
 	Result        compile.SExpression
+	ResultErr     error
 }
 
 type SexpStack struct {
@@ -69,23 +70,23 @@ func NewSexpStack() SexpStack {
 	}
 }
 
-func (vm *Closure) TypeId() string {
+func (vm Closure) TypeId() string {
 	return "closure"
 }
 
-func (vm *Closure) SExpressionTypeId() compile.SExpressionType {
+func (vm Closure) SExpressionTypeId() compile.SExpressionType {
 	return compile.SExpressionTypeClosure
 }
 
-func (vm *Closure) String(compEnv *compile.CompilerEnvironment) string {
+func (vm Closure) String(compEnv *compile.CompilerEnvironment) string {
 	return "closure"
 }
 
-func (vm *Closure) IsList() bool {
+func (vm Closure) IsList() bool {
 	return false
 }
 
-func (vm *Closure) Equals(sexp compile.SExpression) bool {
+func (vm Closure) Equals(sexp compile.SExpression) bool {
 	//TODO implement me
 	panic("implement me")
 }
@@ -94,18 +95,6 @@ var globalEnvMutex = uint32(0)
 
 func NewVM(compEnv *compile.CompilerEnvironment) *Closure {
 	return &Closure{
-		CompilerEnv: compEnv,
-		Stack: SexpStack{
-			stack: make([]compile.SExpression, 0, 8),
-		},
-		Pc:   0,
-		Cont: nil,
-	}
-}
-
-func NewVMWithGlobalEnvId(compEnv *compile.CompilerEnvironment, globalEnvId string) *Closure {
-	return &Closure{
-		GlobalEnvId: globalEnvId,
 		CompilerEnv: compEnv,
 		Stack: SexpStack{
 			stack: make([]compile.SExpression, 0, 8),
@@ -178,7 +167,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			jumpTo := compile.DeserializeJmpIfInstr(vm.CompilerEnv, code)
 			val, ok := selfVm.Stack.Pop().(compile.Bool)
 			if !ok {
-				fmt.Println("not a bool")
+				selfVm.ResultErr = errors.New("not a bool")
 				goto ESCAPE
 			}
 			if val {
@@ -192,7 +181,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			jumpTo := compile.DeserializeJmpElseInstr(vm.CompilerEnv, code)
 			val, ok := selfVm.Stack.Pop().(compile.Bool)
 			if !ok {
-				fmt.Println("not a bool")
+				selfVm.ResultErr = errors.New("not a bool")
 				goto ESCAPE
 			}
 
@@ -224,7 +213,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			atomic.StoreUint32(&globalEnvMutex, 0)
 			symId, err := vm.CompilerEnv.FindSymbolInEnvironment(envId, symIndexId)
 			if err != nil {
-				fmt.Println(err)
+				selfVm.ResultErr = err
 				goto ESCAPE
 			}
 			selfVm.Stack.Push(compile.NewSymbol(symId))
@@ -245,7 +234,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			deserialize, err := compile.DeserializeSexpressionInstr(vm.CompilerEnv, code)
 
 			if err != nil {
-				panic(err)
+				selfVm.ResultErr = err
 			}
 			selfVm.Stack.Push(deserialize)
 			selfVm.Pc++
@@ -307,7 +296,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			nextVm, ok := selfVm.Stack.Pop().(*Closure)
 
 			if !ok {
-				fmt.Println("not a closure")
+				selfVm.ResultErr = errors.New("not a closure")
 				goto ESCAPE
 			}
 
@@ -320,7 +309,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			argsSize := compile.DeserializeCallInstr(vm.CompilerEnv, code)
 
 			if argsSize != int64(len(nextVm.TemporaryArgs)) {
-				fmt.Println("args size not match")
+				selfVm.ResultErr = errors.New("args size not match")
 				goto ESCAPE
 			}
 
@@ -350,7 +339,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			flag := true
 			for i := int64(1); i < argsSize; i++ {
 				if !ok {
-					fmt.Println("arg is not bool")
+					selfVm.ResultErr = errors.New("arg is not bool")
 					goto ESCAPE
 				}
 				tmp, ok = selfVm.Stack.Pop().(compile.Bool)
@@ -375,7 +364,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			flag := false
 			for i := int64(0); i < argsSize; i++ {
 				if !ok {
-					fmt.Println("arg is not bool")
+					selfVm.ResultErr = errors.New("arg is not bool")
 					goto ESCAPE
 				}
 				if tmp {
@@ -430,7 +419,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			for i := int64(0); i < argLen; i++ {
 				tmp, ok = selfVm.Stack.Pop().(compile.Number)
 				if !ok {
-					fmt.Println("arg is not number")
+					selfVm.ResultErr = errors.New("arg is not number")
 					goto ESCAPE
 				}
 				sum += int64(tmp)
@@ -446,7 +435,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			for i := int64(0); i < argLen-1; i++ {
 				tmp, ok = selfVm.Stack.Pop().(compile.Number)
 				if !ok {
-					fmt.Println("arg is not number")
+					selfVm.ResultErr = errors.New("arg is not number")
 					goto ESCAPE
 				}
 				minus += int64(tmp)
@@ -462,7 +451,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			for i := int64(0); i < argLen; i++ {
 				tmp, ok = selfVm.Stack.Pop().(compile.Number)
 				if !ok {
-					fmt.Println("arg is not number")
+					selfVm.ResultErr = errors.New("arg is not number")
 					goto ESCAPE
 				}
 				sum *= int64(tmp)
@@ -479,18 +468,18 @@ func VMRun(vm *Closure) compile.SExpression {
 			for i := int64(0); i < argLen-1; i++ {
 				tmp, ok = selfVm.Stack.Pop().(compile.Number)
 				if !ok {
-					fmt.Println("arg is not number")
+					selfVm.ResultErr = errors.New("arg is not number")
 					goto ESCAPE
 				}
 				if tmp == 0 {
-					fmt.Println("divide by zero")
+					selfVm.ResultErr = errors.New("divide by zero")
 					goto ESCAPE
 				}
 				sum *= int64(tmp)
 			}
 
 			if sum == 0 {
-				fmt.Println("divide by zero")
+				selfVm.ResultErr = errors.New("divide by zero")
 				goto ESCAPE
 			}
 			selfVm.Stack.Push(compile.Number(int64(selfVm.Stack.Pop().(compile.Number)) / sum))
@@ -505,7 +494,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			for i := argLen - 1; 0 <= i; i-- {
 				tmp, ok = selfVm.Stack.Pop().(compile.Number)
 				if !ok {
-					fmt.Println("arg is not number")
+					selfVm.ResultErr = errors.New("arg is not number")
 					goto ESCAPE
 				}
 				args[i] = int64(tmp)
@@ -532,7 +521,7 @@ func VMRun(vm *Closure) compile.SExpression {
 					continue
 				}
 				if !ok {
-					fmt.Println("arg is not number")
+					selfVm.ResultErr = errors.New("arg is not number")
 				}
 				if val != tmp {
 					result = false
@@ -557,7 +546,7 @@ func VMRun(vm *Closure) compile.SExpression {
 					continue
 				}
 				if !ok {
-					fmt.Println("arg is not number")
+					selfVm.ResultErr = errors.New("arg is not number")
 				}
 				if val == tmp {
 					result = false
@@ -577,7 +566,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			flag := true
 			for i := int64(1); i < argLen; i++ {
 				if !ok {
-					fmt.Println("arg is not number")
+					selfVm.ResultErr = errors.New("arg is not number")
 					goto ESCAPE
 				}
 				tmp, ok = selfVm.Stack.Pop().(compile.Number)
@@ -585,7 +574,7 @@ func VMRun(vm *Closure) compile.SExpression {
 					continue
 				}
 				if !ok {
-					fmt.Println("arg is not number")
+					selfVm.ResultErr = errors.New("arg is not number")
 					goto ESCAPE
 				}
 				if val >= tmp {
@@ -606,7 +595,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			flag := true
 			for i := int64(1); i < argLen; i++ {
 				if !ok {
-					fmt.Println("arg is not number")
+					selfVm.ResultErr = errors.New("arg is not number")
 					goto ESCAPE
 				}
 				tmp, ok = selfVm.Stack.Pop().(compile.Number)
@@ -614,7 +603,7 @@ func VMRun(vm *Closure) compile.SExpression {
 					continue
 				}
 				if !ok {
-					fmt.Println("arg is not number")
+					selfVm.ResultErr = errors.New("arg is not number")
 					goto ESCAPE
 				}
 				if val <= tmp {
@@ -635,12 +624,12 @@ func VMRun(vm *Closure) compile.SExpression {
 			flag := true
 			for i := int64(1); i < argLen; i++ {
 				if !ok {
-					fmt.Println("arg is not number")
+					selfVm.ResultErr = errors.New("arg is not number")
 					goto ESCAPE
 				}
 				tmp, ok = selfVm.Stack.Pop().(compile.Number)
 				if !ok {
-					fmt.Println("arg is not number")
+					selfVm.ResultErr = errors.New("arg is not number")
 					goto ESCAPE
 				}
 				if flag == false {
@@ -665,7 +654,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			flag := true
 			for i := int64(1); i < argLen; i++ {
 				if !ok {
-					fmt.Println("arg is not number")
+					selfVm.ResultErr = errors.New("arg is not number")
 					goto ESCAPE
 				}
 				tmp, ok = selfVm.Stack.Pop().(compile.Number)
@@ -673,7 +662,7 @@ func VMRun(vm *Closure) compile.SExpression {
 					continue
 				}
 				if !ok {
-					fmt.Println("arg is not number")
+					selfVm.ResultErr = errors.New("arg is not number")
 					goto ESCAPE
 				}
 				if val < tmp {
@@ -690,7 +679,7 @@ func VMRun(vm *Closure) compile.SExpression {
 		case compile.OPCODE_CAR:
 			target, ok := selfVm.Stack.Pop().(compile.ConsCell)
 			if !ok {
-				fmt.Println("car target is not cons cell")
+				selfVm.ResultErr = errors.New("car target is not cons cell")
 				goto ESCAPE
 			}
 			selfVm.Stack.Push(target.GetCar())
@@ -699,7 +688,7 @@ func VMRun(vm *Closure) compile.SExpression {
 		case compile.OPCODE_CDR:
 			target, ok := selfVm.Stack.Pop().(compile.ConsCell)
 			if !ok {
-				fmt.Println("cdr target is not cons cell")
+				selfVm.ResultErr = errors.New("cdr target is not cons cell")
 				goto ESCAPE
 			}
 			selfVm.Stack.Push(target.GetCdr())
@@ -715,17 +704,17 @@ func VMRun(vm *Closure) compile.SExpression {
 		case compile.OPCODE_ARRAY_GET:
 			arrArgSize := compile.DeserializeArrayGetInstr(vm.CompilerEnv, code)
 			if arrArgSize != 2 {
-				fmt.Println("array get arg size is not 2")
+				selfVm.ResultErr = errors.New("array get arg size is not 2")
 				goto ESCAPE
 			}
 			index, ok := selfVm.Stack.Pop().(compile.Number)
 			if !ok {
-				fmt.Println("index is not number")
+				selfVm.ResultErr = errors.New("index is not number")
 				goto ESCAPE
 			}
 			target, ok := selfVm.Stack.Pop().(*compile.NativeArray)
 			if !ok {
-				fmt.Println("not an array")
+				selfVm.ResultErr = errors.New("not an array")
 				goto ESCAPE
 			}
 			selfVm.Stack.Push(target.Get(int64(index)))
@@ -733,21 +722,21 @@ func VMRun(vm *Closure) compile.SExpression {
 		case compile.OPCODE_ARRAY_SET:
 			elem, ok := selfVm.Stack.Pop().(compile.Number)
 			if !ok {
-				fmt.Println("elem is not number")
+				selfVm.ResultErr = errors.New("elem is not number")
 				goto ESCAPE
 			}
 			rawIndex, ok := selfVm.Stack.Pop().(compile.Number)
 			if !ok {
-				fmt.Println("index is not number")
+				selfVm.ResultErr = errors.New("index is not number")
 				goto ESCAPE
 			}
 			target, ok := selfVm.Stack.Pop().(*compile.NativeArray)
 			if !ok {
-				fmt.Println("not an array")
+				selfVm.ResultErr = errors.New("not an array")
 				goto ESCAPE
 			}
 			if err := target.Set(int64(rawIndex), elem); err != nil {
-				fmt.Println(err)
+				selfVm.ResultErr = err
 				goto ESCAPE
 			}
 			selfVm.Stack.Push(target)
@@ -756,7 +745,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			targetRaw := selfVm.Stack.Pop()
 			target, ok := targetRaw.(*compile.NativeArray)
 			if !ok {
-				fmt.Println("not an array")
+				selfVm.ResultErr = errors.New("not an array")
 				goto ESCAPE
 			}
 			selfVm.Stack.Push(compile.Number(target.Length()))
@@ -779,7 +768,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			arrArgSize := compile.DeserializeMapGetInstr(vm.CompilerEnv, code)
 
 			if arrArgSize != 2 && arrArgSize != 3 {
-				fmt.Println("map get arg size is not 2 or 3")
+				selfVm.ResultErr = errors.New("map get arg size is not 2 or 3")
 				goto ESCAPE
 			}
 
@@ -790,12 +779,12 @@ func VMRun(vm *Closure) compile.SExpression {
 
 			key, ok := selfVm.Stack.Pop().(compile.Str)
 			if !ok {
-				fmt.Println("key is not string")
+				selfVm.ResultErr = errors.New("key is not string")
 				goto ESCAPE
 			}
 			target, ok := selfVm.Stack.Pop().(*compile.NativeHashMap)
 			if !ok {
-				fmt.Println("not an hashmap")
+				selfVm.ResultErr = errors.New("not an hashmap")
 				goto ESCAPE
 			}
 
@@ -811,12 +800,12 @@ func VMRun(vm *Closure) compile.SExpression {
 			val := selfVm.Stack.Pop()
 			key, ok := selfVm.Stack.Pop().(compile.Str)
 			if !ok {
-				fmt.Println("key is not string")
+				selfVm.ResultErr = errors.New("key is not string")
 				goto ESCAPE
 			}
 			target, ok := selfVm.Stack.Pop().(*compile.NativeHashMap)
 			if !ok {
-				fmt.Println("not an hashmap")
+				selfVm.ResultErr = errors.New("not an hashmap")
 				goto ESCAPE
 			}
 			target.Set(uint64(key), val)
@@ -825,14 +814,14 @@ func VMRun(vm *Closure) compile.SExpression {
 		case compile.OPCODE_MAP_LENGTH:
 			target, ok := selfVm.Stack.Pop().(*compile.NativeHashMap)
 			if !ok {
-				fmt.Println("not an hashmap")
+				selfVm.ResultErr = errors.New("not an hashmap")
 				goto ESCAPE
 			}
 			selfVm.Stack.Push(compile.Number(target.Length()))
 			selfVm.Pc++
 		case compile.OPCODE_MAP_KEYS:
 			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeNativeHashmap {
-				fmt.Println("not an hashmap")
+				selfVm.ResultErr = errors.New("not an hashmap")
 				goto ESCAPE
 			}
 			target := selfVm.Stack.Pop().(*compile.NativeHashMap)
@@ -840,12 +829,12 @@ func VMRun(vm *Closure) compile.SExpression {
 			selfVm.Pc++
 		case compile.OPCODE_MAP_DELETE:
 			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeString {
-				fmt.Println("key is not string")
+				selfVm.ResultErr = errors.New("key is not string")
 				goto ESCAPE
 			}
 			key := selfVm.Stack.Pop()
 			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeNativeHashmap {
-				fmt.Println("not an hashmap")
+				selfVm.ResultErr = errors.New("not an hashmap")
 				goto ESCAPE
 			}
 			target := selfVm.Stack.Pop().(*compile.NativeHashMap)
@@ -856,19 +845,19 @@ func VMRun(vm *Closure) compile.SExpression {
 		case compile.OPCODE_HEAVY:
 			argsLen := compile.DeserializeHeavyInstr(vm.CompilerEnv, code)
 			if argsLen <= 0 || argsLen > 2 {
-				fmt.Println("invalid heavy instr")
+				selfVm.ResultErr = errors.New("invalid heavy instr")
 				goto ESCAPE
 			}
 			if argsLen == 2 {
 				callBackRaw := selfVm.Stack.Pop()
 				if callBackRaw.SExpressionTypeId() != compile.SExpressionTypeClosure {
-					fmt.Println("not a closure")
+					selfVm.ResultErr = errors.New("not a closure")
 					goto ESCAPE
 				}
 				callBack := callBackRaw.(*Closure)
 				sendBody := selfVm.Stack.Pop()
 				//send to heavy
-				GetSupervisor().AddTaskTaskWithCallback(vm.CompilerEnv, sendBody, callBack)
+				GetSupervisor().AddTaskWithCallback(sendBody, callBack)
 			}
 			if argsLen == 1 {
 				sendBody := selfVm.Stack.Pop()
@@ -882,30 +871,30 @@ func VMRun(vm *Closure) compile.SExpression {
 			argsLen := compile.DeserializeStringSplitInstr(vm.CompilerEnv, code)
 
 			if argsLen != 2 {
-				fmt.Println("invalid string split instr")
+				selfVm.ResultErr = errors.New("invalid string split instr")
 				goto ESCAPE
 			}
 
 			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeString {
-				fmt.Println("not a string")
+				selfVm.ResultErr = errors.New("not a string")
 				goto ESCAPE
 			}
 
 			s, ok := selfVm.Stack.Pop().(compile.Str)
 			if !ok {
-				fmt.Println("not a string")
+				selfVm.ResultErr = errors.New("not a string")
 				goto ESCAPE
 			}
 			sep := s.GetValue(vm.CompilerEnv)
 
 			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeString {
-				fmt.Println("not a string")
+				selfVm.ResultErr = errors.New("not a string")
 				goto ESCAPE
 			}
 
 			t, ok := selfVm.Stack.Pop().(compile.Str)
 			if !ok {
-				fmt.Println("not a string")
+				selfVm.ResultErr = errors.New("not a string")
 				goto ESCAPE
 			}
 			target := t.GetValue(vm.CompilerEnv)
@@ -926,25 +915,25 @@ func VMRun(vm *Closure) compile.SExpression {
 			argsLen := compile.DeserializeStringJoinInstr(vm.CompilerEnv, code)
 
 			if argsLen != 2 {
-				fmt.Println("invalid string join instr")
+				selfVm.ResultErr = errors.New("invalid string join instr")
 				goto ESCAPE
 			}
 
 			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeString {
-				fmt.Println("not a string")
+				selfVm.ResultErr = errors.New("not a string")
 				goto ESCAPE
 			}
 
 			s, ok := selfVm.Stack.Pop().(compile.Str)
 			if !ok {
-				fmt.Println("not a string")
+				selfVm.ResultErr = errors.New("not a string")
 				goto ESCAPE
 			}
 			sep := s.GetValue(vm.CompilerEnv)
 
 			target, ok := selfVm.Stack.Pop().(*compile.NativeArray)
 			if !ok {
-				fmt.Println("not an array")
+				selfVm.ResultErr = errors.New("not an array")
 				goto ESCAPE
 			}
 			conv := make([]string, target.Length())
@@ -963,14 +952,14 @@ func VMRun(vm *Closure) compile.SExpression {
 		case compile.OPCODE_READ_FILE:
 			pathRaw, ok := selfVm.Stack.Pop().(compile.Str)
 			if !ok {
-				fmt.Println("not a string")
+				selfVm.ResultErr = errors.New("not a string")
 				goto ESCAPE
 			}
 			filePath := pathRaw.GetValue(vm.CompilerEnv)
 
 			file, err := os.Open(filePath)
 			if err != nil {
-				fmt.Println(err)
+				selfVm.ResultErr = err
 				goto ESCAPE
 			}
 			defer file.Close()
@@ -978,20 +967,20 @@ func VMRun(vm *Closure) compile.SExpression {
 			//read file content
 			fileInfo, err := file.Stat()
 			if err != nil {
-				fmt.Println(err)
+				selfVm.ResultErr = err
 				goto ESCAPE
 			}
 			fileSize := fileInfo.Size()
 			fileContent := make([]byte, fileSize)
 			_, err = file.Read(fileContent)
 			if err != nil {
-				fmt.Println("file read err: ", err)
+				selfVm.ResultErr = err
 				goto ESCAPE
 			}
 			selfVm.Stack.Push(compile.Str(vm.CompilerEnv.GetCompilerSymbol(string(fileContent))))
 			selfVm.Pc++
 		default:
-			fmt.Println("unknown opcode: ", code)
+			selfVm.ResultErr = errors.New(fmt.Sprintf("unknown opcode: %s", code.String()))
 			goto ESCAPE
 		}
 	}
