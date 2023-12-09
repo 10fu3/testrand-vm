@@ -48,7 +48,7 @@ func (stk *SexpStack) Pop() compile.SExpression {
 
 	r := stk.stack[stk.Size-1]
 
-	if len(stk.stack)/2 > stk.Size && len(stk.stack) > 63 {
+	if len(stk.stack)/2 > stk.Size && len(stk.stack) > 31 {
 		stk.stack = stk.stack[:(len(stk.stack) * 3 / 4)]
 	}
 
