@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testrand-vm/compile"
 	"testrand-vm/config"
 	"testrand-vm/util"
@@ -40,6 +41,8 @@ func LoadBalancingRegisterForServer(conf iface.LoadBalancingRegisterConfig) erro
 	return nil
 }
 
+var runningVmCount = atomic.Int64{}
+
 func StartServer(comp *compile.CompilerEnvironment, config config.Value) {
 
 	ramdomListener, _close := util.CreateListener()
@@ -57,7 +60,7 @@ func StartServer(comp *compile.CompilerEnvironment, config config.Value) {
 		}{Message: "OK"})
 	})
 	engine.Get("/routine-count", func(c *fiber.Ctx) error {
-		fmt.Printf("health check: %d\n", runtime.NumGoroutine())
+		fmt.Printf("health check: %d\n", runningVmCount.Load())
 		return c.JSON(struct {
 			Count int `json:"count"`
 		}{Count: runtime.NumGoroutine()})
@@ -96,7 +99,9 @@ func StartServer(comp *compile.CompilerEnvironment, config config.Value) {
 				"message": "not allowed empty session_id",
 			})
 		}
+		runningVmCount.Add(1)
 		go func() {
+			defer runningVmCount.Add(-1)
 			if err != nil {
 				fmt.Println("req readErr: " + err.Error())
 				return
@@ -148,6 +153,7 @@ func StartServer(comp *compile.CompilerEnvironment, config config.Value) {
 			}
 			vm = nil
 			compileEnv = nil
+
 		}()
 		return c.JSON(fiber.Map{
 			"status": "ok",
