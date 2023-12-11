@@ -34,7 +34,7 @@ func TestRecursion(t *testing.T) {
 	}
 
 	input := []string{
-		"(define sum (lambda (x) (begin(cond((< 0 x) (begin(println x) (sum (- 1 x))))(#t 0)))))",
+		"(define sum (lambda (x) (begin(cond((< 0 x) (begin(println x) (sum (- x 1))))(#t 0)))))",
 		"(sum 5)",
 	}
 
