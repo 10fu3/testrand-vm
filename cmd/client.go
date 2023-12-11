@@ -5,16 +5,19 @@ import (
 	"fmt"
 	"os"
 	"testrand-vm/compile"
+	"testrand-vm/config"
 	"testrand-vm/vm"
 )
 
 func main() {
 	stdin := bufio.NewReader(os.Stdin)
 	compileEnv := compile.NewCompileEnvironment()
+	conf := config.Get()
+	vm.StartSupervisorForClient(compileEnv, conf)
 	read := compile.NewReader(compileEnv, stdin)
+	runner := vm.NewVM(compileEnv)
 
 	{
-		runner := vm.NewVM(compileEnv)
 		//load file
 		file, err := os.Open("./lib-lisp/lib.t-lisp")
 		if err != nil {
@@ -45,10 +48,6 @@ func main() {
 			fmt.Println("Runtime Error: ", runtimeErr)
 			continue
 		}
-		runner := vm.NewVM(compileEnv)
 		vm.VMRunFromEntryPoint(runner)
-		if runner.ResultErr != nil {
-			fmt.Println("Runtime Error: ", runner.ResultErr)
-		}
 	}
 }

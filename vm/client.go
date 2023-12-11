@@ -9,7 +9,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -18,6 +17,7 @@ import (
 	"testrand-vm/compile"
 	"testrand-vm/config"
 	"testrand-vm/util"
+	"testrand-vm/vm/iface"
 )
 
 type TaskAddRequest struct {
@@ -129,14 +129,18 @@ func (s *Supervisor) sendSingleSexpToServer(taskId TaskId, sendTask compile.SExp
 		"body": b,
 		"from": fmt.Sprintf("%s:%s", s.SelfNetwork.Host, s.SelfNetwork.Port),
 	}
-	sendReqBodyByte, err := json.Marshal(sendReqBody)
+	sendReqBodyByte, _ := json.Marshal(sendReqBody)
 	send, err := http.Post(fmt.Sprintf("http://%s:%s/send-request", conf.ProxyHost, conf.ProxyPort), "application/json", bytes.NewBuffer(sendReqBodyByte))
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
 	sendTargetResult := struct {
 		Addr string `json:"addr"`
 	}{}
-	sendTargetResultByte, err := ioutil.ReadAll(send.Body)
+	sendTargetResultByte, err := io.ReadAll(send.Body)
 	if err := json.Unmarshal(sendTargetResultByte, &sendTargetResult); err != nil {
-		fmt.Println(err)
+		log.Fatal(err)
 		return
 	}
 
@@ -230,121 +234,34 @@ func (s *Supervisor) CompleteTask(taskId string) (*Closure, bool) {
 	return nil, false
 }
 
-//func (s *Supervisor) StartCallbackReceiveServer() {
-//	engine := fiber.New(fiber.Config{
-//		JSONEncoder: json.Marshal,
-//		JSONDecoder: json.Unmarshal,
-//	})
-//
-//	engine.Get("/", func(c *fiber.Ctx) error {
-//		return c.JSON(struct {
-//			Message string `json:"message"`
-//		}{Message: "OK"})
-//	})
-//	engine.Get("/routine-count", func(c *fiber.Ctx) error {
-//		fmt.Printf("health check: %d\n", runtime.NumGoroutine())
-//		return c.JSON(struct {
-//			Count int `json:"count"`
-//		}{Count: runtime.NumGoroutine()})
-//	})
-//	engine.Get("/health", func(c *fiber.Ctx) error {
-//		fmt.Println("health check")
-//		return c.JSON(struct {
-//			Status string `json:"status"`
-//		}{Status: "OK"})
-//	})
-//	engine.Post("/add-task/:id", func(c *fiber.Ctx) error {
-//		requestId := c.Params("id")
-//		var req TaskAddRequest
-//		err := c.BodyParser(&req)
-//		if requestId == "" {
-//			return c.JSON(fiber.Map{
-//				"status":  "ng",
-//				"message": "not allowed empty id",
-//			})
-//		}
-//		if req.From == nil {
-//			return c.JSON(fiber.Map{
-//				"status":  "ng",
-//				"message": "not allowed empty port",
-//			})
-//		}
-//		if req.Body == nil {
-//			return c.JSON(fiber.Map{
-//				"status":  "ng",
-//				"message": "not allowed empty body",
-//			})
-//		}
-//		if req.GlobalNamespaceId == nil {
-//			return c.JSON(fiber.Map{
-//				"status":  "ng",
-//				"message": "not allowed empty session_id",
-//			})
-//		}
-//		go func() {
-//			if err != nil {
-//				fmt.Println("req err: " + err.Error())
-//				return
-//			}
-//			env, err := NewGlobalEnvironmentById(*req.GlobalNamespaceId)
-//
-//			if err != nil {
-//				panic(err)
-//			}
-//
-//			input := strings.NewReader(fmt.Sprintf("%s\n", *req.Body))
-//			read := New(bufio.NewReader(input))
-//			readSexp, err := read.Read()
-//			if err != nil {
-//				fmt.Println("read err: " + err.Error())
-//				return
-//			}
-//			result, err := Eval(ctx, readSexp, env)
-//			TopLevelEnvDelete(*req.GlobalNamespaceId)
-//			env = nil
-//			if err != nil {
-//				fmt.Println(err)
-//				return
-//			}
-//			sendBody := struct {
-//				Result string `json:"result"`
-//			}{
-//				Result: result.String(),
-//			}
-//			sendBodyBytes, err := json.Marshal(&sendBody)
-//			sendBodyBuff := bytes.NewBuffer(sendBodyBytes)
-//			result = nil
-//			sendAddr := fmt.Sprintf("http://%s/receive/%s", *req.From, requestId)
-//
-//			fmt.Println("sendAddr:", sendAddr)
-//
-//			_, err = http.Post(sendAddr, "application/json", sendBodyBuff)
-//
-//			if err != nil {
-//				fmt.Println(err)
-//			}
-//			for i := 0; i < 5; i++ {
-//				if err == nil {
-//					break
-//				}
-//				time.Sleep(time.Second * 3)
-//				_, err = http.Post(sendAddr, "application/json", sendBodyBuff)
-//			}
-//		}()
-//		return c.JSON(fiber.Map{
-//			"status": "ok",
-//			"id":     requestId,
-//		})
-//	})
-//	if err := engine.Listen(fmt.Sprintf(":%s", randomPort)); err != nil {
-//		panic(err)
-//	}
-//}
-
 var superV *Supervisor
 
 func GetSupervisor() *Supervisor {
 	return superV
+}
+
+func LoadBalancingRegisterForClient(conf iface.LoadBalancingRegisterConfig) error {
+
+	if conf.Self.Host == conf.LoadBalancer.Host {
+		conf.LoadBalancer.Host = "localhost"
+	}
+
+	jsonContent := map[string]string{
+		"machine_type":        "client",
+		"from":                fmt.Sprintf("http://%s:%s", conf.Self.Host, conf.Self.Port),
+		"global_namespace_id": conf.Self.EnvId,
+	}
+	jsonByte, err := json.Marshal(jsonContent)
+	if err != nil {
+		panic(err)
+	}
+	sendBodyBuff := bytes.NewBuffer(jsonByte)
+	post, err := http.Post(fmt.Sprintf("http://%s:%s/register-client", conf.LoadBalancer.Host, conf.LoadBalancer.Port), "application/json", sendBodyBuff)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("regist result: %d\n", post.StatusCode)
+	return nil
 }
 
 func StartSupervisorForClient(compileEnv *compile.CompilerEnvironment, config config.Value) *Supervisor {
@@ -376,5 +293,19 @@ func StartSupervisorForClient(compileEnv *compile.CompilerEnvironment, config co
 		OnComplete         *Closure
 	})
 	superV = supervisor
+	err = LoadBalancingRegisterForClient(iface.LoadBalancingRegisterConfig{
+		Self: iface.LoadBalancingRegisterSelfConfig{
+			Host: ip,
+			Port: config.SelfOnCompletePort,
+		},
+		LoadBalancer: iface.LoadBalancingRegisterBalancerConfig{
+			Host: config.ProxyHost,
+			Port: config.ProxyPort,
+		},
+	})
+	if err != nil {
+		panic(err)
+		return nil
+	}
 	return supervisor
 }

@@ -11,11 +11,36 @@ import (
 	"runtime"
 	"strings"
 	"testrand-vm/compile"
+	"testrand-vm/config"
 	"testrand-vm/util"
+	"testrand-vm/vm/iface"
 	"time"
 )
 
-func StartServer(comp *compile.CompilerEnvironment) {
+func LoadBalancingRegisterForServer(conf iface.LoadBalancingRegisterConfig) error {
+
+	if conf.Self.Host == conf.LoadBalancer.Host {
+		conf.LoadBalancer.Host = "localhost"
+	}
+
+	jsonContent := map[string]string{
+		"machine_type": "heavy",
+		"from":         fmt.Sprintf("http://%s:%s", conf.Self.Host, conf.Self.Port),
+	}
+	jsonByte, err := json.Marshal(jsonContent)
+	if err != nil {
+		return err
+	}
+	sendBodyBuff := bytes.NewBuffer(jsonByte)
+	post, err := http.Post(fmt.Sprintf("http://%s:%s/register-heavy", conf.Self.Host, conf.Self.Port), "application/json", sendBodyBuff)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("regist result: %d\n", post.StatusCode)
+	return nil
+}
+
+func StartServer(comp *compile.CompilerEnvironment, config config.Value) {
 
 	ramdomListener, _close := util.CreateListener()
 	randomPort := fmt.Sprintf("%d", ramdomListener.Addr().(*net.TCPAddr).Port)
@@ -132,4 +157,18 @@ func StartServer(comp *compile.CompilerEnvironment) {
 	if err := engine.Listen(fmt.Sprintf(":%s", randomPort)); err != nil {
 		panic(err)
 	}
+	ip, err := util.GetLocalIP()
+	if err != nil {
+		panic(err)
+	}
+	err = LoadBalancingRegisterForServer(iface.LoadBalancingRegisterConfig{
+		Self: iface.LoadBalancingRegisterSelfConfig{
+			Host: ip,
+			Port: config.SelfOnCompletePort,
+		},
+		LoadBalancer: iface.LoadBalancingRegisterBalancerConfig{
+			Host: config.ProxyHost,
+			Port: config.ProxyPort,
+		},
+	})
 }

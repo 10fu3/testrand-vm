@@ -89,24 +89,21 @@ func CreateJmpElseInstr(jmpTo int64) Instr {
 	return NewInstr(OPCODE_JMP_ELSE, b)
 }
 
-func CreateLoadInstr(envIndex uint64, symbolIndex uint64) Instr {
-	b := make([]byte, 16)
-	binary.LittleEndian.PutUint64(b, envIndex)
-	binary.LittleEndian.PutUint64(b[8:], symbolIndex)
+func CreateLoadInstr(symbolIndex uint64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, symbolIndex)
 	return NewInstr(OPCODE_LOAD, b)
 }
 
-func CreateDefineInstr(envIndex, symbolIndex uint64) Instr {
-	b := make([]byte, 16)
-	binary.LittleEndian.PutUint64(b, envIndex)
-	binary.LittleEndian.PutUint64(b[8:], symbolIndex)
+func CreateDefineInstr(symbolIndex uint64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, symbolIndex)
 	return NewInstr(OPCODE_DEFINE, b)
 }
 
-func CreateDefineArgsInstr(envIndex, symbolIndex uint64) Instr {
-	b := make([]byte, 16)
-	binary.LittleEndian.PutUint64(b, envIndex)
-	binary.LittleEndian.PutUint64(b[8:], symbolIndex)
+func CreateDefineArgsInstr(symbolIndex uint64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, symbolIndex)
 	return NewInstr(OPCODE_DEFINE_ARGS, b)
 }
 
@@ -125,18 +122,14 @@ func CreateRetInstr() Instr {
 	return NewInstr(OPCODE_RETURN, []byte{})
 }
 
-func CreateSetInstr(envIndex, symbolIndex uint64) Instr {
+func CreateSetInstr(symbolIndex uint64) Instr {
 	b := make([]byte, 16)
-	binary.LittleEndian.PutUint64(b, envIndex)
-	binary.LittleEndian.PutUint64(b[8:], symbolIndex)
+	binary.LittleEndian.PutUint64(b, symbolIndex)
 	return NewInstr(OPCODE_SET, b)
 }
 
-func CreateNewEnvInstr(parentIndex, envIndex uint64) Instr {
-	b := make([]byte, 16)
-	binary.LittleEndian.PutUint64(b, parentIndex)
-	binary.LittleEndian.PutUint64(b[8:], envIndex)
-	return NewInstr(OPCODE_NEW_ENV, b)
+func CreateNewEnvInstr() Instr {
+	return NewInstr(OPCODE_NEW_ENV, []byte{})
 }
 
 type FunctionGenerateInstr func(argsSize int64) Instr
@@ -448,10 +441,9 @@ func DeserializeInstructions(data []byte) []Instr {
 	return instr
 }
 
-func DeserializeLoadInstr(compEnv *CompilerEnvironment, data Instr) (uint64, uint64) {
-	envI := binary.LittleEndian.Uint64(data.Data[0:8])
-	symbolI := binary.LittleEndian.Uint64(data.Data[8:16])
-	return envI, symbolI
+func DeserializeLoadInstr(compEnv *CompilerEnvironment, data Instr) uint64 {
+	symbolI := binary.LittleEndian.Uint64(data.Data)
+	return symbolI
 }
 
 func DeserializePushNumberInstr(compEnv *CompilerEnvironment, data Instr) int64 {
@@ -492,27 +484,20 @@ func DeserializeJmpElseInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }
 
-func DeserializeNewEnvInstr(compEnv *CompilerEnvironment, data Instr) (uint64, uint64) {
+//func DeserializeNewEnvInstr(compEnv *CompilerEnvironment, data Instr) (uint64, uint64) {
+//	return parentIndex, envIndex
+//}
 
-	parentIndex := binary.LittleEndian.Uint64(data.Data[0:8])
-	envIndex := binary.LittleEndian.Uint64(data.Data[8:16])
+func DeserializeDefineInstr(compEnv *CompilerEnvironment, data Instr) uint64 {
+	symbolI := binary.LittleEndian.Uint64(data.Data)
 
-	return parentIndex, envIndex
+	return symbolI
 }
 
-func DeserializeDefineInstr(compEnv *CompilerEnvironment, data Instr) (uint64, uint64) {
+func DeserializeDefineArgsInstr(compEnv *CompilerEnvironment, data Instr) uint64 {
+	symbolI := binary.LittleEndian.Uint64(data.Data)
 
-	envI := binary.LittleEndian.Uint64(data.Data[0:8])
-	symbolI := binary.LittleEndian.Uint64(data.Data[8:16])
-
-	return envI, symbolI
-}
-
-func DeserializeDefineArgsInstr(compEnv *CompilerEnvironment, data Instr) (uint64, uint64) {
-	envI := binary.LittleEndian.Uint64(data.Data[0:8])
-	symbolI := binary.LittleEndian.Uint64(data.Data[8:16])
-
-	return envI, symbolI
+	return symbolI
 }
 
 func DeserializeCreateClosureInstr(compEnv *CompilerEnvironment, data Instr) (int64, int64) {
@@ -521,12 +506,10 @@ func DeserializeCreateClosureInstr(compEnv *CompilerEnvironment, data Instr) (in
 	return varslen, funcOpAffectedCode
 }
 
-func DeserializeSetInstr(compEnv *CompilerEnvironment, data Instr) (uint64, uint64) {
+func DeserializeSetInstr(compEnv *CompilerEnvironment, data Instr) uint64 {
+	symbolI := binary.LittleEndian.Uint64(data.Data)
 
-	envI := binary.LittleEndian.Uint64(data.Data[0:8])
-	symbolI := binary.LittleEndian.Uint64(data.Data[8:16])
-
-	return envI, symbolI
+	return symbolI
 
 }
 

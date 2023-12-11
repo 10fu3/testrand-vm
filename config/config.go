@@ -15,14 +15,14 @@ type Value struct {
 	SelfOnCompletePort string `env:"SELF_ON_COMPLETE_PORT" envDefault:"4040"`
 }
 
-func Get() *Value {
+func Get() Value {
 	// loads values from .env into the system
 	if err := godotenv.Load(); err != nil {
 		log.Print("No .env file found")
 	}
 	var conf Value
 	if err := env.Parse(&conf); err != nil {
-		return &Value{}
+		return Value{}
 	}
-	return &conf
+	return conf
 }
