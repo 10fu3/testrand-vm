@@ -21,7 +21,7 @@ import (
 )
 
 type TaskAddRequest struct {
-	Body              *string `json:"body"`
+	Body              *string `json:"sexp_body"`
 	From              *string `json:"from"`
 	GlobalNamespaceId *string `json:"global_namespace_id"`
 }
@@ -53,7 +53,7 @@ type Supervisor struct {
 	}
 }
 
-func (s *Supervisor) StartCallbackReceiveServer() {
+func (s *Supervisor) StartCallbackReceiveServer(conf config.Value) {
 	router := fiber.New(fiber.Config{
 		JSONEncoder: json.Marshal,
 		JSONDecoder: json.Unmarshal,
@@ -87,10 +87,11 @@ func (s *Supervisor) StartCallbackReceiveServer() {
 		result, parseErr := read.Read()
 
 		vm := NewVM(s.CompileEnv)
-		vm.Stack.Push(closure)
 		vm.Stack.Push(result)
+		vm.Stack.Push(closure)
 		vm.Code = []compile.Instr{
 			compile.CreateCallInstr(1),
+			compile.CreateEndCodeInstr(),
 		}
 
 		VMRun(vm)
@@ -98,14 +99,19 @@ func (s *Supervisor) StartCallbackReceiveServer() {
 		c.Status(http.StatusOK)
 		return nil
 	})
+	if err := router.Listen(fmt.Sprintf(":%s", conf.SelfOnCompletePort)); err != nil {
+		panic(err)
+	}
 }
 
 func (s *Supervisor) sendSingleSexpToServer(taskId TaskId, sendTask compile.SExpression) {
 	conf := config.Get()
 	reqAddr := fmt.Sprintf("%s:%s", s.SelfNetwork.Host, s.SelfNetwork.Port)
+	b := sendTask.String(s.CompileEnv)
 	values, err := json.Marshal(TaskAddRequest{
 		From:              &reqAddr,
 		GlobalNamespaceId: &s.GlobalEnvId,
+		Body:              &b,
 	})
 
 	if err != nil {
@@ -123,13 +129,13 @@ func (s *Supervisor) sendSingleSexpToServer(taskId TaskId, sendTask compile.SExp
 		Transport: &transport,
 	}
 
-	b := sendTask.String(s.CompileEnv)
-
 	sendReqBody := map[string]string{
-		"body": b,
-		"from": fmt.Sprintf("%s:%s", s.SelfNetwork.Host, s.SelfNetwork.Port),
+		"sexp_body":           b,
+		"from":                fmt.Sprintf("%s:%s", s.SelfNetwork.Host, s.SelfNetwork.Port),
+		"global_namespace_id": s.GlobalEnvId,
 	}
 	sendReqBodyByte, _ := json.Marshal(sendReqBody)
+	fmt.Println(string(sendReqBodyByte))
 	send, err := http.Post(fmt.Sprintf("http://%s:%s/send-request", conf.ProxyHost, conf.ProxyPort), "application/json", bytes.NewBuffer(sendReqBodyByte))
 	if err != nil {
 		log.Fatal(err)
@@ -194,8 +200,6 @@ func (s *Supervisor) AddGroupTasks(sendTask []compile.SExpression, onComplete *C
 
 func (s *Supervisor) AddTask(comp *compile.CompilerEnvironment, sendTask compile.SExpression) TaskId {
 	taskId := TaskId(uuid.NewString())
-	s.Mutex.Lock()
-	defer s.Mutex.Unlock()
 	s.sendSingleSexpToServer(taskId, sendTask)
 	return taskId
 }
@@ -264,14 +268,14 @@ func LoadBalancingRegisterForClient(conf iface.LoadBalancingRegisterConfig) erro
 	return nil
 }
 
-func StartSupervisorForClient(compileEnv *compile.CompilerEnvironment, config config.Value) *Supervisor {
+func StartSupervisorForClient(compileEnv *compile.CompilerEnvironment, conf config.Value) *Supervisor {
 	if superV != nil {
 		return superV
 	}
 	supervisor := NewSupervisor()
 	supervisor.CompileEnv = compileEnv
 	supervisor.GlobalEnvId = uuid.NewString()
-	supervisor.Config = config
+	supervisor.Config = conf
 	ip, err := util.GetLocalIP()
 
 	if err != nil {
@@ -281,7 +285,7 @@ func StartSupervisorForClient(compileEnv *compile.CompilerEnvironment, config co
 	supervisor.SelfNetwork = struct {
 		Host string
 		Port string
-	}{Host: ip, Port: config.SelfOnCompletePort}
+	}{Host: ip, Port: conf.SelfOnCompletePort}
 	supervisor.Mutex = &sync.RWMutex{}
 	supervisor.Tasks = make(map[TaskId]*Closure)
 	supervisor.RefGroupTask = make(map[TaskId]GroupTaskId)
@@ -296,16 +300,19 @@ func StartSupervisorForClient(compileEnv *compile.CompilerEnvironment, config co
 	err = LoadBalancingRegisterForClient(iface.LoadBalancingRegisterConfig{
 		Self: iface.LoadBalancingRegisterSelfConfig{
 			Host: ip,
-			Port: config.SelfOnCompletePort,
+			Port: conf.SelfOnCompletePort,
 		},
 		LoadBalancer: iface.LoadBalancingRegisterBalancerConfig{
-			Host: config.ProxyHost,
-			Port: config.ProxyPort,
+			Host: conf.ProxyHost,
+			Port: conf.ProxyPort,
 		},
 	})
 	if err != nil {
 		panic(err)
 		return nil
 	}
+	go func() {
+		supervisor.StartCallbackReceiveServer(conf)
+	}()
 	return supervisor
 }

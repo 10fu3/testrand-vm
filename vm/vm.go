@@ -938,6 +938,7 @@ func VMRun(vm *Closure) compile.SExpression {
 				//send to heavy
 				GetSupervisor().AddTask(vm.CompilerEnv, sendBody)
 			}
+			selfVm.Stack.Push(compile.NewNil())
 			// selfVm.Stack.Push(compile.NewString(vm.CompilerEnv, "somethin-uuid"))
 			selfVm.Pc++
 		case compile.OPCODE_STRING_SPLIT:
