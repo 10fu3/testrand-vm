@@ -48,7 +48,7 @@ func LoadBalancingRegisterForServer(conf *iface.LoadBalancingRegisterConfig) err
 
 var runningVmCount = atomic.Int64{}
 
-func StartServer(comp *compile.CompilerEnvironment, config config.Value) {
+func StartServer(config config.Value) {
 
 	ramdomListener, _close := util.CreateListener()
 	randomPort := fmt.Sprintf("%d", ramdomListener.Addr().(*net.TCPAddr).Port)
@@ -124,15 +124,15 @@ func StartServer(comp *compile.CompilerEnvironment, config config.Value) {
 					fmt.Println("req readErr: " + err.Error())
 					return
 				}
-
+				compileEnv := compile.NewCompileEnvironmentBySharedEnvId(*req.GlobalNamespaceId, client)
 				input := strings.NewReader(fmt.Sprintf("%s\n", *req.Body))
-				read := compile.NewReader(comp, bufio.NewReader(input))
+				read := compile.NewReader(compileEnv, bufio.NewReader(input))
 				readSexp, readErr := read.Read()
 				if readErr != nil {
 					fmt.Println("read readErr: " + readErr.Error())
 					return
 				}
-				compileEnv := compile.NewCompileEnvironmentBySharedEnvId(*req.GlobalNamespaceId, client)
+
 				if compileEnv.Compile(readSexp) != nil {
 					fmt.Println("compile readErr: " + readErr.Error())
 					return
