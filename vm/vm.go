@@ -456,6 +456,7 @@ func VMRun(vm *Closure) compile.SExpression {
 		case compile.OPCODE_END_CODE:
 			val := selfVm.Stack.Pop()
 			disp := val.String(vm.CompilerEnv)
+			vm.Result = val
 			fmt.Println(disp)
 			goto ESCAPE
 		case compile.OPCODE_NOP:
