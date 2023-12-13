@@ -3,15 +3,22 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"github.com/google/uuid"
 	"os"
 	"testrand-vm/compile"
 	"testrand-vm/config"
+	"testrand-vm/infra"
 	"testrand-vm/vm"
 )
 
 func main() {
 	stdin := bufio.NewReader(os.Stdin)
-	compileEnv := compile.NewCompileEnvironment()
+	envId := uuid.New().String()
+	client, err := infra.SetupEtcd(envId)
+	if err != nil {
+		panic(err)
+	}
+	compileEnv := compile.NewCompileEnvironment(envId, client)
 	conf := config.Get()
 	vm.StartSupervisorForClient(compileEnv, conf)
 	read := compile.NewReader(compileEnv, stdin)
