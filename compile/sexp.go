@@ -473,6 +473,38 @@ func NewNativeHashmap(compEnv *CompilerEnvironment, elements map[uint64]SExpress
 	return &NativeHashMap{elements: elements, compEnv: compEnv}
 }
 
+type NativeValue struct {
+	Value interface{}
+}
+
+func (v NativeValue) TypeId() string {
+	return "native_value"
+}
+
+func (v NativeValue) SExpressionTypeId() SExpressionType {
+	return SExpressionTypeNativeValue
+}
+
+func (v NativeValue) String(compEnv *CompilerEnvironment) string {
+	return fmt.Sprintf("%v", v.Value)
+}
+
+func (v NativeValue) IsList() bool {
+	return false
+}
+
+func (v NativeValue) Equals(sexp SExpression) bool {
+	tmp, ok := sexp.(NativeValue)
+	if !ok {
+		return false
+	}
+	return v.Value == tmp.Value
+}
+
+func NewNativeValue[T any](value T) NativeValue {
+	return NativeValue{Value: value}
+}
+
 type SExpressionType int
 
 const (
@@ -486,4 +518,5 @@ const (
 	SExpressionTypeNativeHashmap
 	SExpressionTypeNativeArray
 	SExpressionTypeEnvironment
+	SExpressionTypeNativeValue
 )

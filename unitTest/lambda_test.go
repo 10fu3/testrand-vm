@@ -13,7 +13,7 @@ import (
 
 func TestLambdaUnit(t *testing.T) {
 
-	compileEnv := compile.NewCompileEnvironment()
+	compileEnv := compile.NewCompileEnvironment("test", nil)
 	runner := vm.NewVM(compileEnv)
 	{
 		//load file

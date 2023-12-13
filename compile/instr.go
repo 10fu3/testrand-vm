@@ -342,6 +342,22 @@ func CreateGetTimeNanos(instrSize int64) Instr {
 	return NewInstr(OPCODE_GET_NOW_TIME_NANO, []byte{})
 }
 
+func CreateGlobalGetInstr(argSize int64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, uint64(argSize))
+	return NewInstr(OPCODE_GLOBAL_GET, b)
+}
+
+func CreateGlobalSetInstr(argSize int64) Instr {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, uint64(argSize))
+	return NewInstr(OPCODE_GLOBAL_SET, b)
+}
+
+func CreatGlobalTransactionInstr(argSize int64) Instr {
+	return NewInstr(OPCODE_GLOBAL_TRANSACTION, []byte{})
+}
+
 var NativeFuncNameToOpCodeMap = map[string]FunctionGenerateInstr{
 	"print":          CreatePrintInstr,
 	"println":        CreatePrintlnInstr,
@@ -375,6 +391,9 @@ var NativeFuncNameToOpCodeMap = map[string]FunctionGenerateInstr{
 	"string-split":   CreateStringSplit,
 	"string-join":    CreateStringJoin,
 	"get-time-nano":  CreateGetTimeNanos,
+	"g-get":          CreateGlobalSetInstr,
+	"g-set":          CreateGlobalSetInstr,
+	"g-tx":           CreatGlobalTransactionInstr,
 }
 
 func CreateEndCodeInstr() Instr {
@@ -508,9 +527,7 @@ func DeserializeCreateClosureInstr(compEnv *CompilerEnvironment, data Instr) (in
 
 func DeserializeSetInstr(compEnv *CompilerEnvironment, data Instr) uint64 {
 	symbolI := binary.LittleEndian.Uint64(data.Data)
-
 	return symbolI
-
 }
 
 func DeserializeCallInstr(compEnv *CompilerEnvironment, data Instr) int64 {
@@ -638,5 +655,17 @@ func DeserializeArrayForEachInstr(compEnv *CompilerEnvironment, data Instr) int6
 }
 
 func DeserializeGetTimeNano(compEnv *CompilerEnvironment, data Instr) int64 {
+	return int64(binary.LittleEndian.Uint64(data.Data))
+}
+
+func DeserializeGlobalGetInstr(compEnv *CompilerEnvironment, data Instr) int64 {
+	return int64(binary.LittleEndian.Uint64(data.Data))
+}
+
+func DeserializeGlobalSetInstr(compEnv *CompilerEnvironment, data Instr) int64 {
+	return int64(binary.LittleEndian.Uint64(data.Data))
+}
+
+func DeserializeGlobalTransactionInstr(compEnv *CompilerEnvironment, data Instr) int64 {
 	return int64(binary.LittleEndian.Uint64(data.Data))
 }

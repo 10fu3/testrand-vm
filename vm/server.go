@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"testrand-vm/compile"
 	"testrand-vm/config"
+	"testrand-vm/infra"
 	"testrand-vm/util"
 	"testrand-vm/vm/iface"
 	"time"
@@ -81,6 +82,10 @@ func StartServer(comp *compile.CompilerEnvironment, config config.Value) {
 			var req TaskAddRequest
 			fmt.Println(string(c.Body()))
 			err := c.BodyParser(&req)
+			if err != nil {
+				fmt.Println("req readErr: " + err.Error())
+				return err
+			}
 			if requestId == "" {
 				return c.JSON(fiber.Map{
 					"status":  "ng",
@@ -107,6 +112,13 @@ func StartServer(comp *compile.CompilerEnvironment, config config.Value) {
 			}
 			runningVmCount.Add(1)
 			go func() {
+				client, err := infra.SetupEtcd(*req.GlobalNamespaceId)
+
+				if err != nil {
+					fmt.Println("etcd setup err: " + err.Error())
+					return
+				}
+
 				defer runningVmCount.Add(-1)
 				if err != nil {
 					fmt.Println("req readErr: " + err.Error())
@@ -120,7 +132,7 @@ func StartServer(comp *compile.CompilerEnvironment, config config.Value) {
 					fmt.Println("read readErr: " + readErr.Error())
 					return
 				}
-				compileEnv := compile.NewCompileEnvironmentBySharedEnvId(*req.GlobalNamespaceId)
+				compileEnv := compile.NewCompileEnvironmentBySharedEnvId(*req.GlobalNamespaceId, client)
 				if compileEnv.Compile(readSexp) != nil {
 					fmt.Println("compile readErr: " + readErr.Error())
 					return

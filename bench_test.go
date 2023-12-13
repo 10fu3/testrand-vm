@@ -38,7 +38,7 @@ import (
 
 func BenchmarkIO(b *testing.B) {
 
-	compileEnv := compile.NewCompileEnvironment()
+	compileEnv := compile.NewCompileEnvironment("test", nil)
 	runner := vm.NewVM(compileEnv)
 	{
 		//load file

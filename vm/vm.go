@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
+	"go.etcd.io/etcd/client/v3/concurrency"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -895,7 +896,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			selfVm.Stack.Push(compile.Number(target.Length()))
 			selfVm.Pc++
 		case compile.OPCODE_MAP_KEYS:
-			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeNativeHashmap {
+			if selfVm.Stack.Peek().SExpressionTypeId() != compile.SExpressionTypeNativeHashmap {
 				vm.ResultErr = errors.New("not an hashmap")
 				goto ESCAPE
 			}
@@ -903,12 +904,12 @@ func VMRun(vm *Closure) compile.SExpression {
 			selfVm.Stack.Push(target)
 			selfVm.Pc++
 		case compile.OPCODE_MAP_DELETE:
-			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeString {
+			if selfVm.Stack.Peek().SExpressionTypeId() != compile.SExpressionTypeString {
 				vm.ResultErr = errors.New("key is not string")
 				goto ESCAPE
 			}
 			key := selfVm.Stack.Pop()
-			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeNativeHashmap {
+			if selfVm.Stack.Peek().SExpressionTypeId() != compile.SExpressionTypeNativeHashmap {
 				vm.ResultErr = errors.New("not an hashmap")
 				goto ESCAPE
 			}
@@ -951,7 +952,7 @@ func VMRun(vm *Closure) compile.SExpression {
 				goto ESCAPE
 			}
 
-			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeString {
+			if selfVm.Stack.Peek().SExpressionTypeId() != compile.SExpressionTypeString {
 				vm.ResultErr = errors.New("not a string")
 				goto ESCAPE
 			}
@@ -963,7 +964,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			}
 			sep := s.GetValue(vm.CompilerEnv)
 
-			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeString {
+			if selfVm.Stack.Peek().SExpressionTypeId() != compile.SExpressionTypeString {
 				vm.ResultErr = errors.New("not a string")
 				goto ESCAPE
 			}
@@ -995,7 +996,7 @@ func VMRun(vm *Closure) compile.SExpression {
 				goto ESCAPE
 			}
 
-			if selfVm.Peek().SExpressionTypeId() != compile.SExpressionTypeString {
+			if selfVm.Stack.Peek().SExpressionTypeId() != compile.SExpressionTypeString {
 				vm.ResultErr = errors.New("not a string")
 				goto ESCAPE
 			}
@@ -1055,6 +1056,51 @@ func VMRun(vm *Closure) compile.SExpression {
 			}
 			selfVm.Stack.Push(compile.Str(vm.CompilerEnv.GetCompilerSymbol(string(fileContent))))
 			selfVm.Pc++
+		case compile.OPCODE_GLOBAL_GET:
+
+			argSize := compile.DeserializeGlobalGetInstr(vm.CompilerEnv, code)
+			args := vm.Stack.stack[int64(len(vm.Stack.stack))-argSize:]
+
+			fmt.Println(args)
+
+			selfVm.Pc++
+		case compile.OPCODE_GLOBAL_SET:
+
+			selfVm.Pc++
+		case compile.OPCODE_GLOBAL_TRANSACTION:
+			closure, ok := selfVm.Stack.Pop().(*Closure)
+			if !ok {
+				vm.ResultErr = errors.New("not a closure")
+				goto ESCAPE
+			}
+
+			if len(closure.TemporaryArgs) != 1 {
+				vm.ResultErr = errors.New("invalid args size")
+				goto ESCAPE
+			}
+
+			nextEnvId := closure.EnvId
+			for !atomic.CompareAndSwapUint32(&globalEnvMutex, 0, 1) {
+			}
+			newEnv := vm.CompilerEnv.GlobalEnv[nextEnvId]
+			atomic.StoreUint32(&globalEnvMutex, 0)
+			closure.EnvId = nextEnvId
+			closure.ReturnCont = selfVm
+			closure.ReturnPc = selfVm.Pc
+			clonedClosure := closure.Clone()
+			_, err := vm.CompilerEnv.RemoteJointVariable.Transaction(func(stm concurrency.STM) error {
+				newEnv.Frame[uint64(closure.TemporaryArgs[0])] = compile.NewNativeValue[concurrency.STM](stm)
+				VMRun(&clonedClosure)
+				return clonedClosure.ResultErr
+			})
+
+			if err != nil {
+				vm.ResultErr = err
+				goto ESCAPE
+			}
+
+			selfVm.Stack.Push(clonedClosure.Result)
+			selfVm.Pc++
 		default:
 			vm.ResultErr = errors.New(fmt.Sprintf("unknown opcode: %s", code.String()))
 			goto ESCAPE
@@ -1076,10 +1122,6 @@ ESCAPE:
 		atomic.StoreUint32(&globalEnvMutex, 0)
 	}
 	return vm.Result
-}
-
-func (vm *Closure) Peek() compile.SExpression {
-	return vm.Stack.Peek()
 }
 
 func (vm *Closure) SetCont(cont *Closure) {

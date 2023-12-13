@@ -1,16 +1,17 @@
 package compile
 
 import (
-	"github.com/google/uuid"
 	"sync/atomic"
+	"testrand-vm/infra"
 )
 
 type CompilerEnvironment struct {
-	SharedEnvId     string
-	Instr           []Instr
-	CompileEnvIndex uint64
-	CompileEnvLock  uint32
-	GlobalEnv       []RuntimeEnv
+	SharedEnvId         string
+	Instr               []Instr
+	CompileEnvIndex     uint64
+	CompileEnvLock      uint32
+	GlobalEnv           []RuntimeEnv
+	RemoteJointVariable *infra.RemoteJointVariable
 }
 
 type RuntimeEnv struct {
@@ -90,9 +91,9 @@ func (s *SymbolTable) GetSymbolById(symbolId uint64) string {
 	return ""
 }
 
-func NewCompileEnvironment() *CompilerEnvironment {
+func NewCompileEnvironment(sharedEndId string, remoteJointVariable *infra.RemoteJointVariable) *CompilerEnvironment {
 	env := &CompilerEnvironment{
-		SharedEnvId:     uuid.NewString(),
+		SharedEnvId:     sharedEndId,
 		Instr:           []Instr{},
 		CompileEnvIndex: 0,
 		CompileEnvLock:  0,
@@ -102,11 +103,12 @@ func NewCompileEnvironment() *CompilerEnvironment {
 				Frame:     map[uint64]SExpression{},
 			},
 		},
+		RemoteJointVariable: remoteJointVariable,
 	}
 	return env
 }
 
-func NewCompileEnvironmentBySharedEnvId(sharedEnvId string) *CompilerEnvironment {
+func NewCompileEnvironmentBySharedEnvId(sharedEnvId string, remoteJointVariable *infra.RemoteJointVariable) *CompilerEnvironment {
 	env := &CompilerEnvironment{
 		Instr:           []Instr{},
 		CompileEnvIndex: 0,
@@ -117,7 +119,8 @@ func NewCompileEnvironmentBySharedEnvId(sharedEnvId string) *CompilerEnvironment
 				Frame:     map[uint64]SExpression{},
 			},
 		},
-		SharedEnvId: sharedEnvId,
+		SharedEnvId:         sharedEnvId,
+		RemoteJointVariable: remoteJointVariable,
 	}
 	return env
 }
