@@ -136,14 +136,14 @@ func NewVM(compEnv *compile.CompilerEnvironment) *Closure {
 func VMRunFromEntryPoint(vm *Closure) {
 	vm.Pc = 0
 	vm.Code = vm.CompilerEnv.GetInstr()
-	for i, v := range vm.Code {
-		if v.Type == compile.OPCODE_LOAD {
-			symIdxId := compile.DeserializeLoadInstr(vm.CompilerEnv, v)
-			fmt.Println(i, "LOAD", vm.CompilerEnv.GetCompilerSymbolString(symIdxId), symIdxId)
-			continue
-		}
-		fmt.Println(i, compile.OpCodeMap[v.Type])
-	}
+	//for i, v := range vm.Code {
+	//	if v.Type == compile.OPCODE_LOAD {
+	//		symIdxId := compile.DeserializeLoadInstr(vm.CompilerEnv, v)
+	//		fmt.Println(i, "LOAD", vm.CompilerEnv.GetCompilerSymbolString(symIdxId), symIdxId)
+	//		continue
+	//	}
+	//	fmt.Println(i, compile.OpCodeMap[v.Type])
+	//}
 	VMRun(vm)
 	vm.Code = nil
 }
