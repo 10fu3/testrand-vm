@@ -29,7 +29,7 @@ func TestClosure(t *testing.T) {
 		"3",
 	}
 
-	compileEnv := compile.NewCompileEnvironment()
+	compileEnv := compile.NewCompileEnvironment("test", nil)
 	runner := vm.NewVM(compileEnv)
 	{
 		//load file
