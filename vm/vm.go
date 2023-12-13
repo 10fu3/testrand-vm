@@ -136,19 +136,14 @@ func NewVM(compEnv *compile.CompilerEnvironment) *Closure {
 func VMRunFromEntryPoint(vm *Closure) {
 	vm.Pc = 0
 	vm.Code = vm.CompilerEnv.GetInstr()
-	//for i, v := range vm.Code {
-	//	if v.Type == compile.OPCODE_LOAD {
-	//		envId, symIdxId := compile.DeserializeLoadInstr(vm.CompilerEnv, v)
-	//		//symId, err := vm.CompilerEnv.FindSymbolInEnvironment(envId, symIdxId)
-	//		//if err != nil {
-	//		//	fmt.Println(err)
-	//		//	os.Exit(1)
-	//		//}
-	//		fmt.Println(i, "LOAD", vm.CompilerEnv.GetCompilerSymbolString(symIdxId), envId, symIdxId)
-	//		continue
-	//	}
-	//	fmt.Println(i, compile.OpCodeMap[v.Type])
-	//}
+	for i, v := range vm.Code {
+		if v.Type == compile.OPCODE_LOAD {
+			symIdxId := compile.DeserializeLoadInstr(vm.CompilerEnv, v)
+			fmt.Println(i, "LOAD", vm.CompilerEnv.GetCompilerSymbolString(symIdxId), symIdxId)
+			continue
+		}
+		fmt.Println(i, compile.OpCodeMap[v.Type])
+	}
 	VMRun(vm)
 	vm.Code = nil
 }
@@ -1082,24 +1077,37 @@ func VMRun(vm *Closure) compile.SExpression {
 			nextEnvId := closure.EnvId
 			for !atomic.CompareAndSwapUint32(&globalEnvMutex, 0, 1) {
 			}
-			newEnv := vm.CompilerEnv.GlobalEnv[nextEnvId]
 			atomic.StoreUint32(&globalEnvMutex, 0)
+
+			selfVmRestore := selfVm.Clone()
+
 			closure.EnvId = nextEnvId
-			closure.ReturnCont = selfVm
-			closure.ReturnPc = selfVm.Pc
+
+			baseClosure := NewVM(vm.CompilerEnv)
 			clonedClosure := closure.Clone()
+			clonedClosure.EnvId = nextEnvId
+			clonedClosure.ReturnCont = baseClosure
+			clonedClosure.ReturnPc = 0
+
 			_, err := vm.CompilerEnv.RemoteJointVariable.Transaction(func(stm concurrency.STM) error {
-				newEnv.Frame[uint64(closure.TemporaryArgs[0])] = compile.NewNativeValue[concurrency.STM](stm)
-				VMRun(&clonedClosure)
-				return clonedClosure.ResultErr
+				baseClosure.Stack.Push(compile.NewNativeValue(stm))
+				baseClosure.Stack.Push(&clonedClosure)
+				baseClosure.Code = []compile.Instr{
+					compile.CreateCallInstr(1),
+					compile.CreateEndCodeInstr(),
+				}
+				VMRun(baseClosure)
+				return baseClosure.ResultErr
 			})
+
+			selfVm = &selfVmRestore
 
 			if err != nil {
 				vm.ResultErr = err
 				goto ESCAPE
 			}
 
-			selfVm.Stack.Push(clonedClosure.Result)
+			selfVm.Stack.Push(baseClosure.Result)
 			selfVm.Pc++
 		default:
 			vm.ResultErr = errors.New(fmt.Sprintf("unknown opcode: %s", code.String()))
