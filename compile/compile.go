@@ -34,7 +34,6 @@ func IsNativeFunc(compEnv *CompilerEnvironment, sexp SExpression) bool {
 
 func GenerateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStartLine int64) ([]Instr, int64, error) {
 	codes, leng, err := _generateOpCode(compileEnv, sexp, nowStartLine)
-	//return append(codes, NewSymbol("end-code")), leng + 1
 	return append(codes, CreateEndCodeInstr()), leng + 1, err
 }
 
@@ -44,10 +43,8 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 		symId := compileEnv.GetCompilerSymbol(sexp.(Symbol).String(compileEnv))
 		return []Instr{CreateLoadInstr(symId)}, 1, nil
 	case SExpressionTypeNumber:
-		//return []SExpression{NewSymbol(fmt.Sprintf("push-num %s", sexp.String()))}, 1
 		return []Instr{CreatePushNumberInstr(sexp.(Number).GetValue())}, 1, nil
 	case SExpressionTypeBool:
-		//return []SExpression{NewSymbol(fmt.Sprintf("push-boo %s", sexp.String()))}, 1
 		return []Instr{CreatePushBoolInstr(sexp.(Bool).GetValue())}, 1, nil
 	case SExpressionTypeString:
 		i := compileEnv.GetCompilerSymbol(sexp.(Str).GetValue(compileEnv))
@@ -71,7 +68,6 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 
 		_, argsLen := ToArraySexp(cell.GetCdr())
 		cdrOpCode, cdrAffectedCode, err := _generateOpCode(compileEnv, cell.GetCdr(), nowStartLine+carAffectedCode)
-		//return append(append(cdrOpCode, carOpCode...), NewSymbol(fmt.Sprintf("call %d", argsLen))), carAffectedCode + cdrAffectedCode + 1
 		return append(append(cdrOpCode, carOpCode...), CreateCallInstr(argsLen)), carAffectedCode + cdrAffectedCode + 1, nil
 	}
 
@@ -83,20 +79,8 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 		if cellArrLen != 1 {
 			return nil, 0, errors.New("Invalid Syntax Quote")
 		}
-		//return []SExpression{NewSymbol(fmt.Sprintf("load-sexp %s\n", cellArr[0]))}, 1
 		i := compileEnv.GetCompilerSymbol(cellArr[0].String(compileEnv))
 		return []Instr{CreatePushSExpressionInstr(i)}, 1, nil
-
-	//case "loop":
-	//	if 2 != cellArrLen {
-	//		panic("Invalid syntax 2")
-	//	}
-	//	// cond-opcode(?)|jump-(1)|loop-body-opcode(?)|jump-lable(1)
-	//	loopCond := cellArr[0]
-	//	condOpCode, condAffectedCode := _generateOpCode(loopCond, nowStartLine)
-	//	loopBody := cellArr[1]
-	//	bodyOpCode, bodyAffectedCode := _generateOpCode(loopBody, nowStartLine+condAffectedCode+1)
-	//	return append(append(condOpCode, NewSymbol(fmt.Sprintf("jump %d", nowStartLine+condAffectedCode+bodyAffectedCode+2))), append(bodyOpCode, NewSymbol(fmt.Sprintf("jump-%d", nowStartLine)))...), condAffectedCode + bodyAffectedCode + 2
 	case "begin":
 		bodies, bodiesSize := ToArraySexp(cellContent)
 		var result []Instr
@@ -113,7 +97,6 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 			if i != bodiesSize-1 {
 				lineNum += 1
 				addedRows += 1
-				//result = append(result, NewSymbol("pop"))
 				result = append(result, CreatePopInstr())
 			}
 		}
@@ -162,7 +145,6 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 
 			indexesIndex += condAffectedCode
 
-			//opCodes[indexesIndex] = NewSymbol(fmt.Sprintf("jmp-else %d", nowLine+condAffectedCode+bodyAffectedCode+2))
 			opCodes[indexesIndex] = CreateJmpElseInstr(nowLine + condAffectedCode + bodyAffectedCode + 2)
 
 			indexesIndex += 1
@@ -173,7 +155,6 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 
 			indexesIndex += bodyAffectedCode
 
-			//opCodes[indexesIndex] = NewSymbol("temporary jump")
 			opCodes[indexesIndex] = CreateDummyInstr()
 			lastIndexes[i] = indexesIndex
 
@@ -183,7 +164,6 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 		}
 
 		for i := int64(0); i < condAndBodySize; i++ {
-			//opCodes[lastIndexes[i]] = NewSymbol(fmt.Sprintf("jmp %d", nowLine))
 			opCodes[lastIndexes[i]] = CreateJmpInstr(nowLine)
 		}
 
@@ -209,7 +189,6 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 			opCodes = append(opCodes, condOpCodes...)
 		}
 
-		//opCodes = append(opCodes, NewSymbol(fmt.Sprintf("and %d", condLen)))
 		opCodes = append(opCodes, CreateAndInstr(condLen))
 
 		return opCodes, affectedCode - nowStartLine + 1, nil
@@ -234,7 +213,6 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 			opCodes = append(opCodes, condOpCodes...)
 		}
 
-		//opCodes = append(opCodes, NewSymbol(fmt.Sprintf("or %d", condLen)))
 		opCodes = append(opCodes, CreateOrInstr(condLen))
 
 		return opCodes, affectedCode - nowStartLine + 1, nil
@@ -253,8 +231,6 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 		if err != nil {
 			return nil, 0, err
 		}
-
-		//opCodes = append(opCodes, NewSymbol(fmt.Sprintf("set %s", symbol.(Symbol).GetSymbolIndex())))
 
 		if err != nil {
 			return nil, 0, err
@@ -280,7 +256,6 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 			return nil, 0, err
 		}
 
-		//opCodes = append(opCodes, NewSymbol(fmt.Sprintf("define %s", symbol.(Symbol).GetSymbolIndex())))
 		opCodes = append(opCodes, CreateDefineInstr(uint64(symbol)))
 
 		return opCodes, affectedCode + 1, nil
@@ -290,22 +265,18 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 			return nil, 0, errors.New("Invalid syntax 4")
 		}
 
-		//opCode := []SExpression{NewSymbol("new-env")}
 		opCode := []Instr{CreateNewEnvInstr()}
 		opCodeLine := nowStartLine + 1
 
-		//(a b c)
 		vars, varslen := ToArraySexp(cellArr[0])
 
 		for i := int64(0); i < varslen; i++ {
-			//opCode = append(opCode, NewSymbol(fmt.Sprintf("define-args %s", vars[i].(Symbol).GetSymbolIndex())))
 			opCode = append(opCode, CreateDefineArgsInstr(uint64(vars[i].(Symbol))))
 			opCodeLine += 1
 		}
 
 		rawBody := cellArr[1]
 
-		//opCode = append(opCode, NewSymbol("create-lambda-dummy arg-len this-stack-instr func-instr-size"))
 		opCode = append(opCode, CreateDummyInstr())
 
 		createFuncOpCodeLine := opCodeLine
@@ -319,10 +290,8 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 		opCode = append(opCode, funcOpCode...)
 		opCodeLine += funcOpCodeAffectLow
 
-		//opCode[createFuncOpCodeLine-nowStartLine] = NewSymbol(fmt.Sprintf("create-lambda %d %d", varslen, funcOpCodeAffectLow+1))
 		opCode[createFuncOpCodeLine-nowStartLine] = CreateCreateLambdaInstr(varslen, funcOpCodeAffectLow+1)
 
-		//opCode = append(opCode, NewSymbol("ret"))
 		opCode = append(opCode, CreateRetInstr())
 
 		return opCode, opCodeLine - nowStartLine + 1, nil //+1 is return instr count
@@ -335,8 +304,6 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 		cond := cellArr[0]
 		body := cellArr[1]
 
-		//cond|jmp-else|body|jmp|...
-
 		startIndex := nowStartLine
 		condOpCode, condAffectedCode, err := _generateOpCode(compileEnv, cond, nowStartLine)
 		if err != nil {
@@ -348,26 +315,18 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 			return nil, 0, err
 		}
 
-		//opCode := append(condOpCode, NewSymbol(fmt.Sprintf("jmp-else-dummy %d", nowStartLine+condAffectedCode+1+bodyAffectedCode)))
 		opCode := append(condOpCode, CreateDummyInstr())
 
 		dummyIndex := condAffectedCode
 		opCode = append(opCode, bodyOpCode...)
 
-		//opCode = append(opCode, NewSymbol(fmt.Sprintf("jmp %d", startIndex)))
 		opCode = append(opCode, CreateJmpInstr(startIndex))
 
-		//opCode[dummyIndex] = NewSymbol(fmt.Sprintf("jmp-else %d", nowStartLine+condAffectedCode+1+bodyAffectedCode+1))
 		opCode[dummyIndex] = CreateJmpElseInstr(nowStartLine + condAffectedCode + 1 + bodyAffectedCode + 1)
 
 		return opCode, condAffectedCode + 1 + bodyAffectedCode + 1, nil
 	}
 
-	//if IsEmptyList(cell.GetCdr()) {
-	//	var carAffectedCode int64
-	//	carOpCode, carAffectedCode = _generateOpCode(cell.GetCar(), nowStartLine)
-	//	return carOpCode, carAffectedCode
-	//}
 	var carOpCode []Instr
 	args, argsLen := ToArraySexp(cell.GetCdr())
 	var cdrOpCode []Instr
@@ -385,7 +344,6 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 	var carAffectedCode int64
 
 	if IsNativeFunc(compileEnv, cell.GetCar()) {
-		//carOpCode = []SExpression{NewSymbol(fmt.Sprintf("%s %d", cell.GetCar(), argsLen))}
 		funcName := cell.GetCar().(Symbol).String(compileEnv)
 		tartgetFunc := NativeFuncNameToOpCodeMap[funcName]
 		if nil == tartgetFunc {
@@ -404,7 +362,6 @@ func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStart
 		}
 		cdrAffectedCode := affectedCdrOpeCodeRowCount - nowStartLine
 
-		//return append(append(cdrOpCode, carOpCode...), NewSymbol(fmt.Sprintf("call %d", argsLen))), carAffectedCode + cdrAffectedCode + 1
 		return append(append(cdrOpCode, carOpCode...), CreateCallInstr(argsLen)), carAffectedCode + cdrAffectedCode + 1, nil
 	}
 }

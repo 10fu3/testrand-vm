@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"github.com/google/uuid"
 	"os"
 	"testrand-vm/compile"
 	"testrand-vm/vm"
@@ -10,7 +11,7 @@ import (
 
 func main() {
 	stdin := bufio.NewReader(os.Stdin)
-	compileEnv := compile.NewCompileEnvironment()
+	compileEnv := compile.NewCompileEnvironment(uuid.New().String(), nil)
 	read := compile.NewReader(compileEnv, stdin)
 
 	{
