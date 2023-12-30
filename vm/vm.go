@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
@@ -1054,13 +1055,97 @@ func VMRun(vm *Closure) compile.SExpression {
 		case compile.OPCODE_GLOBAL_GET:
 
 			argSize := compile.DeserializeGlobalGetInstr(vm.CompilerEnv, code)
-			args := vm.Stack.stack[int64(len(vm.Stack.stack))-argSize:]
 
-			fmt.Println(args)
+			var result compile.SExpression = nil
 
+			if argSize != 2 {
+				if argSize != 3 {
+					vm.ResultErr = errors.New("invalid global get instr")
+					goto ESCAPE
+				}
+				result = selfVm.Stack.Pop()
+			}
+
+			sym, ok := selfVm.Stack.Peek().(compile.Symbol)
+
+			if !ok {
+				vm.ResultErr = errors.New("not a symbol")
+				goto ESCAPE
+			}
+			selfVm.Stack.Pop()
+
+			rawTxn, ok := selfVm.Stack.Peek().(compile.NativeValue)
+
+			if !ok {
+				vm.ResultErr = errors.New("not a native value")
+				goto ESCAPE
+			}
+
+			selfVm.Stack.Pop()
+
+			txn, ok := rawTxn.Value.(concurrency.STM)
+
+			if !ok {
+				vm.ResultErr = errors.New("not a stm")
+				goto ESCAPE
+			}
+
+			symStr := sym.String(vm.CompilerEnv)
+
+			if txn.Rev(symStr) > 0 {
+				val := txn.Get(symStr)
+
+				input := strings.NewReader(fmt.Sprintf("%s\n", val))
+				bufReader := bufio.NewReader(bufio.NewReader(input))
+				re := compile.NewReader(vm.CompilerEnv, bufReader)
+				var err error
+				result, err = re.Read()
+				if err != nil {
+					vm.ResultErr = err
+					goto ESCAPE
+				}
+			}
+
+			selfVm.Stack.Push(result)
 			selfVm.Pc++
 		case compile.OPCODE_GLOBAL_SET:
 
+			argSize := compile.DeserializeGlobalGetInstr(vm.CompilerEnv, code)
+
+			if argSize != 3 {
+				vm.ResultErr = errors.New("invalid global get instr")
+				goto ESCAPE
+			}
+
+			val := selfVm.Stack.Pop()
+
+			sym, ok := selfVm.Stack.Peek().(compile.Symbol)
+
+			if !ok {
+				vm.ResultErr = errors.New("not a symbol")
+				goto ESCAPE
+			}
+			selfVm.Stack.Pop()
+
+			rawTxn, ok := selfVm.Stack.Peek().(compile.NativeValue)
+
+			if !ok {
+				vm.ResultErr = errors.New("not a native value")
+				goto ESCAPE
+			}
+
+			selfVm.Stack.Pop()
+
+			txn, ok := rawTxn.Value.(concurrency.STM)
+
+			if !ok {
+				vm.ResultErr = errors.New("not a stm")
+				goto ESCAPE
+			}
+
+			txn.Put(sym.String(vm.CompilerEnv), val.String(vm.CompilerEnv))
+
+			selfVm.Stack.Push(sym)
 			selfVm.Pc++
 		case compile.OPCODE_GLOBAL_TRANSACTION:
 			closure, ok := selfVm.Stack.Pop().(*Closure)
