@@ -391,7 +391,7 @@ var NativeFuncNameToOpCodeMap = map[string]FunctionGenerateInstr{
 	"string-split":   CreateStringSplit,
 	"string-join":    CreateStringJoin,
 	"get-time-nano":  CreateGetTimeNanos,
-	"g-get":          CreateGlobalSetInstr,
+	"g-get":          CreateGlobalGetInstr,
 	"g-set":          CreateGlobalSetInstr,
 	"g-tx":           CreatGlobalTransactionInstr,
 }

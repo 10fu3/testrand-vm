@@ -303,6 +303,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			}
 
 			if !found {
+				atomic.StoreUint32(&globalEnvMutex, 0)
 				vm.ResultErr = errors.New("symbol not found")
 				goto ESCAPE
 			}
@@ -479,7 +480,8 @@ func VMRun(vm *Closure) compile.SExpression {
 			tmp := compile.Number(0)
 			ok := false
 			for i := int64(0); i < argLen; i++ {
-				tmp, ok = selfVm.Stack.Pop().(compile.Number)
+				stack := selfVm.Stack.Pop()
+				tmp, ok = stack.(compile.Number)
 				if !ok {
 					vm.ResultErr = errors.New("arg is not number")
 					goto ESCAPE
@@ -964,7 +966,6 @@ func VMRun(vm *Closure) compile.SExpression {
 			target := t.GetValue(vm.CompilerEnv)
 
 			splitted := strings.Split(target, sep)
-			fmt.Println("AAAAAAAA?")
 			var convArr = make([]compile.SExpression, len(splitted))
 
 			for i := 0; i < len(splitted); i++ {
@@ -1082,8 +1083,9 @@ func VMRun(vm *Closure) compile.SExpression {
 			}
 
 			strStr := str.String(vm.CompilerEnv)
+			rev := txn.Rev(fmt.Sprintf("/env/%s/%s", vm.CompilerEnv.RemoteJointVariable.SessionId, strStr))
 
-			if txn.Rev(fmt.Sprintf("/env/%s/%s", vm.CompilerEnv.RemoteJointVariable.SessionId, strStr)) > 0 {
+			if rev > 0 {
 				val := txn.Get(fmt.Sprintf("/env/%s/%s", vm.CompilerEnv.RemoteJointVariable.SessionId, strStr))
 
 				input := strings.NewReader(fmt.Sprintf("%s\n", val))
@@ -1104,7 +1106,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			argSize := compile.DeserializeGlobalGetInstr(vm.CompilerEnv, code)
 
 			if argSize != 3 {
-				vm.ResultErr = errors.New("invalid global get instr")
+				vm.ResultErr = errors.New("invalid global set instr")
 				goto ESCAPE
 			}
 
