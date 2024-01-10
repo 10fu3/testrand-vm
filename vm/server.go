@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"github.com/goccy/go-json"
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 	"net"
 	"net/http"
+	"os"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -54,133 +56,157 @@ func StartServer(config config.Value) {
 	randomPort := fmt.Sprintf("%d", ramdomListener.Addr().(*net.TCPAddr).Port)
 	_close()
 
-	go func() {
-		engine := fiber.New(fiber.Config{
-			JSONEncoder: json.Marshal,
-			JSONDecoder: json.Unmarshal,
-		})
+	engine := fiber.New(fiber.Config{
+		JSONEncoder: json.Marshal,
+		JSONDecoder: json.Unmarshal,
+	})
 
-		engine.Get("/", func(c *fiber.Ctx) error {
-			return c.JSON(struct {
-				Message string `json:"message"`
-			}{Message: "OK"})
-		})
-		engine.Get("/routine-count", func(c *fiber.Ctx) error {
-			fmt.Printf("health check: %d\n", runningVmCount.Load())
-			return c.JSON(struct {
-				Count int `json:"count"`
-			}{Count: runtime.NumGoroutine()})
-		})
-		engine.Get("/health", func(c *fiber.Ctx) error {
-			fmt.Println("health check")
-			return c.JSON(struct {
-				Status string `json:"status"`
-			}{Status: "OK"})
-		})
-		engine.Post("/add-task/:id", func(c *fiber.Ctx) error {
-			requestId := c.Params("id")
-			var req TaskAddRequest
-			fmt.Println(string(c.Body()))
-			err := c.BodyParser(&req)
+	engine.Get("/", func(c *fiber.Ctx) error {
+		return c.JSON(struct {
+			Message string `json:"message"`
+		}{Message: "OK"})
+	})
+	engine.Get("/routine-count", func(c *fiber.Ctx) error {
+		fmt.Printf("health check: %d\n", runningVmCount.Load())
+		return c.JSON(struct {
+			Count int `json:"count"`
+		}{Count: runtime.NumGoroutine()})
+	})
+	engine.Get("/health", func(c *fiber.Ctx) error {
+		fmt.Println("health check")
+		return c.JSON(struct {
+			Status string `json:"status"`
+		}{Status: "OK"})
+	})
+	engine.Post("/add-task/:id", func(c *fiber.Ctx) error {
+		requestId := c.Params("id")
+		var req TaskAddRequest
+		fmt.Println(string(c.Body()))
+		err := c.BodyParser(&req)
+		if err != nil {
+			fmt.Println("req readErr: " + err.Error())
+			return err
+		}
+		if requestId == "" {
+			return c.JSON(fiber.Map{
+				"status":  "ng",
+				"message": "not allowed empty id",
+			})
+		}
+		if req.From == nil {
+			return c.JSON(fiber.Map{
+				"status":  "ng",
+				"message": "not allowed empty port",
+			})
+		}
+		if req.Body == nil {
+			return c.JSON(fiber.Map{
+				"status":  "ng",
+				"message": "not allowed empty body",
+			})
+		}
+		if req.GlobalNamespaceId == nil {
+			return c.JSON(fiber.Map{
+				"status":  "ng",
+				"message": "not allowed empty session_id",
+			})
+		}
+		runningVmCount.Add(1)
+		go func() {
+			fmt.Println("other thread start ", uuid.NewString())
+			client, err := infra.SetupEtcd(*req.GlobalNamespaceId)
+
+			if err != nil {
+				fmt.Println("etcd setup err: " + err.Error())
+				return
+			}
+
+			defer runningVmCount.Add(-1)
 			if err != nil {
 				fmt.Println("req readErr: " + err.Error())
-				return err
+				return
 			}
-			if requestId == "" {
-				return c.JSON(fiber.Map{
-					"status":  "ng",
-					"message": "not allowed empty id",
-				})
+			compileEnv := compile.NewCompileEnvironmentBySharedEnvId(*req.GlobalNamespaceId, client)
+
+			//load file
+			file, err := os.Open("./lib-lisp/lib.t-lisp")
+			if err != nil {
+				panic(err)
 			}
-			if req.From == nil {
-				return c.JSON(fiber.Map{
-					"status":  "ng",
-					"message": "not allowed empty port",
-				})
+			defer file.Close()
+			r := compile.NewReader(compileEnv, bufio.NewReader(file))
+			libSexp, err := r.Read()
+			if err != nil {
+				panic(err)
 			}
-			if req.Body == nil {
-				return c.JSON(fiber.Map{
-					"status":  "ng",
-					"message": "not allowed empty body",
-				})
+			if libCompileErr := compileEnv.Compile(libSexp); libCompileErr != nil {
+				fmt.Println(libCompileErr)
+				os.Exit(1)
 			}
-			if req.GlobalNamespaceId == nil {
-				return c.JSON(fiber.Map{
-					"status":  "ng",
-					"message": "not allowed empty session_id",
-				})
+
+			vm := NewVM(compileEnv)
+			VMRunFromEntryPoint(vm)
+
+			input := strings.NewReader(fmt.Sprintf("%s\n", *req.Body))
+			read := compile.NewReader(compileEnv, bufio.NewReader(input))
+			readSexp, readErr := read.Read()
+			if readErr != nil {
+				fmt.Println("read readErr: " + readErr.Error())
+				return
 			}
-			runningVmCount.Add(1)
-			go func() {
-				client, err := infra.SetupEtcd(*req.GlobalNamespaceId)
 
-				if err != nil {
-					fmt.Println("etcd setup err: " + err.Error())
-					return
+			if compileEnv.Compile(readSexp) != nil {
+				fmt.Println("compile readErr: " + readErr.Error())
+				return
+			}
+
+			VMRunFromEntryPoint(vm)
+
+			if vm.ResultErr != nil {
+				fmt.Println(vm.ResultErr)
+				fmt.Println("completed 1")
+				return
+			}
+
+			sendBody := struct {
+				Result string `json:"result"`
+			}{
+				Result: vm.Result.String(compileEnv),
+			}
+			sendBodyBytes, readErr := json.Marshal(&sendBody)
+			sendBodyBuff := bytes.NewBuffer(sendBodyBytes)
+			sendAddr := fmt.Sprintf("http://%s/receive/%s", *req.From, requestId)
+
+			fmt.Println("sendAddr:", sendAddr)
+
+			_, readErr = http.Post(sendAddr, "application/json", sendBodyBuff)
+
+			if readErr != nil {
+				fmt.Println(readErr)
+			}
+			for i := 0; i < 5; i++ {
+				if readErr == nil {
+					break
 				}
-
-				defer runningVmCount.Add(-1)
-				if err != nil {
-					fmt.Println("req readErr: " + err.Error())
-					return
-				}
-				compileEnv := compile.NewCompileEnvironmentBySharedEnvId(*req.GlobalNamespaceId, client)
-				input := strings.NewReader(fmt.Sprintf("%s\n", *req.Body))
-				read := compile.NewReader(compileEnv, bufio.NewReader(input))
-				readSexp, readErr := read.Read()
-				if readErr != nil {
-					fmt.Println("read readErr: " + readErr.Error())
-					return
-				}
-
-				if compileEnv.Compile(readSexp) != nil {
-					fmt.Println("compile readErr: " + readErr.Error())
-					return
-				}
-
-				vm := NewVM(compileEnv)
-				VMRunFromEntryPoint(vm)
-
-				if vm.ResultErr != nil {
-					fmt.Println(vm.ResultErr)
-					return
-				}
-
-				sendBody := struct {
-					Result string `json:"result"`
-				}{
-					Result: vm.Result.String(compileEnv),
-				}
-				sendBodyBytes, readErr := json.Marshal(&sendBody)
-				sendBodyBuff := bytes.NewBuffer(sendBodyBytes)
-				sendAddr := fmt.Sprintf("http://%s/receive/%s", *req.From, requestId)
-
-				fmt.Println("sendAddr:", sendAddr)
-
+				time.Sleep(time.Second * 3)
 				_, readErr = http.Post(sendAddr, "application/json", sendBodyBuff)
-
-				if readErr != nil {
-					fmt.Println(readErr)
-				}
-				for i := 0; i < 5; i++ {
-					if readErr == nil {
-						break
-					}
-					time.Sleep(time.Second * 3)
-					_, readErr = http.Post(sendAddr, "application/json", sendBodyBuff)
-				}
-				vm = nil
-				compileEnv = nil
-			}()
-			return c.JSON(fiber.Map{
-				"status": "ok",
-				"id":     requestId,
-			})
+			}
+			vm = nil
+			compileEnv = nil
+			fmt.Println("completed 0")
+		}()
+		return c.JSON(fiber.Map{
+			"status": "ok",
+			"id":     requestId,
 		})
+	})
+
+	go func() {
 		if err := engine.Listen(fmt.Sprintf(":%s", randomPort)); err != nil {
 			panic(err)
 		}
 	}()
+
 	ip, err := util.GetLocalIP()
 	if err != nil {
 		panic(err)
@@ -195,5 +221,4 @@ func StartServer(config config.Value) {
 			Port: config.ProxyPort,
 		},
 	})
-	select {}
 }

@@ -2,6 +2,7 @@ package compile
 
 import (
 	"errors"
+	"fmt"
 )
 
 func ToArraySexp(sexp SExpression) ([]SExpression, int64) {
@@ -40,6 +41,7 @@ func GenerateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStartL
 func _generateOpCode(compileEnv *CompilerEnvironment, sexp SExpression, nowStartLine int64) ([]Instr, int64, error) {
 	switch sexp.SExpressionTypeId() {
 	case SExpressionTypeSymbol:
+		fmt.Println("load: ", sexp.String(compileEnv), " ", compileEnv.GetCompilerSymbol(sexp.(Symbol).String(compileEnv)))
 		symId := compileEnv.GetCompilerSymbol(sexp.(Symbol).String(compileEnv))
 		return []Instr{CreateLoadInstr(symId)}, 1, nil
 	case SExpressionTypeNumber:

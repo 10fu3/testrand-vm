@@ -8,4 +8,6 @@ import (
 func main() {
 	conf := config.Get()
 	vm.StartServer(conf)
+	for {
+	}
 }

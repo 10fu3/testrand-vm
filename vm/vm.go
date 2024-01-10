@@ -19,9 +19,7 @@ type Closure struct {
 	Stack         SexpStack
 	Code          []compile.Instr
 	Pc            int64
-	Cont          *Closure
 	ReturnCont    *Closure
-	ReturnPc      int64
 	TemporaryArgs []compile.Symbol
 	Result        compile.SExpression
 	ResultErr     error
@@ -112,9 +110,7 @@ func (vm Closure) Clone() Closure {
 		Stack:         SexpStack{},
 		Code:          vm.Code,
 		Pc:            vm.Pc,
-		Cont:          vm.Cont,
 		ReturnCont:    vm.ReturnCont,
-		ReturnPc:      vm.ReturnPc,
 		TemporaryArgs: vm.TemporaryArgs,
 		Result:        vm.Result,
 		ResultErr:     vm.ResultErr,
@@ -129,8 +125,7 @@ func NewVM(compEnv *compile.CompilerEnvironment) *Closure {
 		Stack: SexpStack{
 			stack: make([]compile.SExpression, 0, 8),
 		},
-		Pc:   0,
-		Cont: nil,
+		Pc: 0,
 	}
 }
 
@@ -246,7 +241,8 @@ func VMRun(vm *Closure) compile.SExpression {
 			}
 
 			if !found {
-				vm.ResultErr = errors.New("symbol not found")
+				atomic.StoreUint32(&globalEnvMutex, 0)
+				vm.ResultErr = errors.New(fmt.Sprintf("symbol not found: %d", symId))
 				goto ESCAPE
 			}
 
@@ -352,7 +348,6 @@ func VMRun(vm *Closure) compile.SExpression {
 				newVm.TemporaryArgs = append(newVm.TemporaryArgs, sym)
 			}
 
-			newVm.Cont = selfVm
 			newVm.EnvId = selfVm.Stack.Pop().(compile.RuntimeEnv).SelfIndex
 			newVm.Pc = 0
 			selfVm.Stack.Push(newVm)
@@ -386,16 +381,12 @@ func VMRun(vm *Closure) compile.SExpression {
 
 			closure.EnvId = nextEnvId
 			closure.ReturnCont = selfVm
-			closure.ReturnPc = selfVm.Pc
 			clonedClosure := closure.Clone()
 			selfVm = &clonedClosure
 		//case "ret":
 		case compile.OPCODE_RETURN:
 			val := selfVm.Stack.Pop()
-			retPc := selfVm.ReturnPc
-			selfVm.Pc = 0
 			selfVm = selfVm.ReturnCont
-			selfVm.Pc = retPc
 			selfVm.Stack.Push(val)
 			selfVm.Pc++
 		//case "and":
@@ -973,7 +964,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			target := t.GetValue(vm.CompilerEnv)
 
 			splitted := strings.Split(target, sep)
-
+			fmt.Println("AAAAAAAA?")
 			var convArr = make([]compile.SExpression, len(splitted))
 
 			for i := 0; i < len(splitted); i++ {
@@ -1066,7 +1057,7 @@ func VMRun(vm *Closure) compile.SExpression {
 				result = selfVm.Stack.Pop()
 			}
 
-			sym, ok := selfVm.Stack.Peek().(compile.Symbol)
+			str, ok := selfVm.Stack.Peek().(compile.Str)
 
 			if !ok {
 				vm.ResultErr = errors.New("not a symbol")
@@ -1090,10 +1081,10 @@ func VMRun(vm *Closure) compile.SExpression {
 				goto ESCAPE
 			}
 
-			symStr := sym.String(vm.CompilerEnv)
+			strStr := str.String(vm.CompilerEnv)
 
-			if txn.Rev(symStr) > 0 {
-				val := txn.Get(symStr)
+			if txn.Rev(fmt.Sprintf("/env/%s/%s", vm.CompilerEnv.RemoteJointVariable.SessionId, strStr)) > 0 {
+				val := txn.Get(fmt.Sprintf("/env/%s/%s", vm.CompilerEnv.RemoteJointVariable.SessionId, strStr))
 
 				input := strings.NewReader(fmt.Sprintf("%s\n", val))
 				bufReader := bufio.NewReader(bufio.NewReader(input))
@@ -1119,7 +1110,7 @@ func VMRun(vm *Closure) compile.SExpression {
 
 			val := selfVm.Stack.Pop()
 
-			sym, ok := selfVm.Stack.Peek().(compile.Symbol)
+			str, ok := selfVm.Stack.Peek().(compile.Str)
 
 			if !ok {
 				vm.ResultErr = errors.New("not a symbol")
@@ -1143,9 +1134,9 @@ func VMRun(vm *Closure) compile.SExpression {
 				goto ESCAPE
 			}
 
-			txn.Put(sym.String(vm.CompilerEnv), val.String(vm.CompilerEnv))
+			txn.Put(fmt.Sprintf("/env/%s/%s", vm.CompilerEnv.RemoteJointVariable.SessionId, str.String(vm.CompilerEnv)), val.String(vm.CompilerEnv))
 
-			selfVm.Stack.Push(sym)
+			selfVm.Stack.Push(str)
 			selfVm.Pc++
 		case compile.OPCODE_GLOBAL_TRANSACTION:
 			closure, ok := selfVm.Stack.Pop().(*Closure)
@@ -1162,7 +1153,6 @@ func VMRun(vm *Closure) compile.SExpression {
 			nextEnvId := closure.EnvId
 			for !atomic.CompareAndSwapUint32(&globalEnvMutex, 0, 1) {
 			}
-			atomic.StoreUint32(&globalEnvMutex, 0)
 
 			selfVmRestore := selfVm.Clone()
 
@@ -1172,7 +1162,8 @@ func VMRun(vm *Closure) compile.SExpression {
 			clonedClosure := closure.Clone()
 			clonedClosure.EnvId = nextEnvId
 			clonedClosure.ReturnCont = baseClosure
-			clonedClosure.ReturnPc = 0
+
+			atomic.StoreUint32(&globalEnvMutex, 0)
 
 			_, err := vm.CompilerEnv.RemoteJointVariable.Transaction(func(stm concurrency.STM) error {
 				baseClosure.Stack.Push(compile.NewNativeValue(stm))
@@ -1215,14 +1206,6 @@ ESCAPE:
 		atomic.StoreUint32(&globalEnvMutex, 0)
 	}
 	return vm.Result
-}
-
-func (vm *Closure) SetCont(cont *Closure) {
-	vm.Cont = cont
-}
-
-func (vm *Closure) GetCont() *Closure {
-	return vm.Cont
 }
 
 func (vm *Closure) SetCode(code []compile.Instr) {
