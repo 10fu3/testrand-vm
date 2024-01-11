@@ -78,10 +78,11 @@ func StartServer(config config.Value) {
 			Status string `json:"status"`
 		}{Status: "OK"})
 	})
+	var requestCount uint64
 	engine.Post("/add-task/:id", func(c *fiber.Ctx) error {
 		requestId := c.Params("id")
 		var req TaskAddRequest
-		fmt.Println(string(c.Body()))
+		//fmt.Println(string(c.Body()))
 		err := c.BodyParser(&req)
 		if err != nil {
 			fmt.Println("req readErr: " + err.Error())
@@ -193,7 +194,8 @@ func StartServer(config config.Value) {
 			}
 			vm = nil
 			compileEnv = nil
-			fmt.Println("completed 0")
+			atomic.AddUint64(&requestCount, 1)
+			fmt.Printf("completed %d\n", requestCount)
 		}()
 		return c.JSON(fiber.Map{
 			"status": "ok",

@@ -101,7 +101,7 @@ func SetupEtcd(sessionId string) (*RemoteJointVariable, error) {
 	//setup etcd
 	etcdClient, err = clientv3.New(clientv3.Config{
 		Endpoints:   []string{fmt.Sprintf("http://%s:%s", conf.EtcdHost, conf.EtcdPort)},
-		DialTimeout: 5 * time.Second,
+		DialTimeout: 30 * time.Second,
 	})
 	locked.Add(-1)
 	if err != nil {

@@ -135,7 +135,7 @@ func (s *Supervisor) sendSingleSexpToServer(taskId TaskId, sendTask compile.SExp
 		"global_namespace_id": s.GlobalEnvId,
 	}
 	sendReqBodyByte, _ := json.Marshal(sendReqBody)
-	fmt.Println(string(sendReqBodyByte))
+	//fmt.Println(string(sendReqBodyByte))
 	send, err := http.Post(fmt.Sprintf("http://%s:%s/send-request", conf.ProxyHost, conf.ProxyPort), "application/json", bytes.NewBuffer(sendReqBodyByte))
 	if err != nil {
 		log.Fatal(err)
