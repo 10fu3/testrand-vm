@@ -119,6 +119,11 @@ func (vm Closure) Clone() Closure {
 
 func NewVM(compEnv *compile.CompilerEnvironment) *Closure {
 	return &Closure{
+		Env: &compile.RuntimeEnv{
+			Frame:     &sync.Map{},
+			Parent:    nil,
+			HasParent: false,
+		},
 		CompilerEnv: compEnv,
 		Stack: SexpStack{
 			stack: make([]compile.SExpression, 0, 8),
@@ -130,11 +135,6 @@ func NewVM(compEnv *compile.CompilerEnvironment) *Closure {
 func VMRunFromEntryPoint(vm *Closure) {
 	vm.Pc = 0
 	vm.Code = vm.CompilerEnv.GetInstr()
-	vm.Env = &compile.RuntimeEnv{
-		Frame:     &sync.Map{},
-		Parent:    nil,
-		HasParent: false,
-	}
 	//for i, v := range vm.Code {
 	//	if v.Type == compile.OPCODE_LOAD {
 	//		symIdxId := compile.DeserializeLoadInstr(vm.CompilerEnv, v)
