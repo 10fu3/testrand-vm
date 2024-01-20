@@ -8,13 +8,13 @@ import (
 	"go.etcd.io/etcd/client/v3/concurrency"
 	"os"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"testrand-vm/compile"
 	"time"
 )
 
 type Closure struct {
-	EnvId         uint64
+	Env           *compile.RuntimeEnv
 	CompilerEnv   *compile.CompilerEnvironment
 	Stack         SexpStack
 	Code          []compile.Instr
@@ -105,7 +105,7 @@ func (vm Closure) Equals(sexp compile.SExpression) bool {
 
 func (vm Closure) Clone() Closure {
 	return Closure{
-		EnvId:         vm.EnvId,
+		Env:           vm.Env,
 		CompilerEnv:   vm.CompilerEnv,
 		Stack:         SexpStack{},
 		Code:          vm.Code,
@@ -116,8 +116,6 @@ func (vm Closure) Clone() Closure {
 		ResultErr:     vm.ResultErr,
 	}
 }
-
-var globalEnvMutex = uint32(0)
 
 func NewVM(compEnv *compile.CompilerEnvironment) *Closure {
 	return &Closure{
@@ -132,6 +130,11 @@ func NewVM(compEnv *compile.CompilerEnvironment) *Closure {
 func VMRunFromEntryPoint(vm *Closure) {
 	vm.Pc = 0
 	vm.Code = vm.CompilerEnv.GetInstr()
+	vm.Env = &compile.RuntimeEnv{
+		Frame:     &sync.Map{},
+		Parent:    nil,
+		HasParent: false,
+	}
 	//for i, v := range vm.Code {
 	//	if v.Type == compile.OPCODE_LOAD {
 	//		symIdxId := compile.DeserializeLoadInstr(vm.CompilerEnv, v)
@@ -222,32 +225,28 @@ func VMRun(vm *Closure) compile.SExpression {
 		case compile.OPCODE_LOAD:
 
 			symId := compile.DeserializeLoadInstr(vm.CompilerEnv, code)
-			for !atomic.CompareAndSwapUint32(&globalEnvMutex, 0, 1) {
-			}
 
-			var env = vm.CompilerEnv.GlobalEnv[selfVm.EnvId]
+			var env = selfVm.Env
 			var found bool
-			var val compile.SExpression
+			var val any
 
 			for {
-				val, found = env.Frame[symId]
+				val, found = env.Frame.Load(symId)
 				if found {
 					break
 				}
 				if !env.HasParent {
 					break
 				}
-				env = vm.CompilerEnv.GlobalEnv[env.Parent]
+				env = env.Parent
 			}
 
 			if !found {
-				atomic.StoreUint32(&globalEnvMutex, 0)
 				vm.ResultErr = errors.New(fmt.Sprintf("symbol not found: %d", symId))
 				goto ESCAPE
 			}
 
-			selfVm.Stack.Push(val)
-			atomic.StoreUint32(&globalEnvMutex, 0)
+			selfVm.Stack.Push(val.(compile.SExpression))
 			selfVm.Pc++
 
 		//case "define":
@@ -255,10 +254,7 @@ func VMRun(vm *Closure) compile.SExpression {
 			//sym := reader.NewSymbol(opCodeAndArgs[1])
 			symId := compile.DeserializeDefineInstr(vm.CompilerEnv, code)
 			val := selfVm.Stack.Pop()
-			for !atomic.CompareAndSwapUint32(&globalEnvMutex, 0, 1) {
-			}
-			vm.CompilerEnv.GlobalEnv[selfVm.EnvId].Frame[symId] = val
-			atomic.StoreUint32(&globalEnvMutex, 0)
+			selfVm.Env.Frame.Store(symId, val)
 			selfVm.Stack.Push(compile.NewSymbol(symId))
 			selfVm.Pc++
 		//case "define-args":
@@ -285,47 +281,37 @@ func VMRun(vm *Closure) compile.SExpression {
 		case compile.OPCODE_SET:
 			//sym := reader.NewSymbol(opCodeAndArgs[1])
 			symId := compile.DeserializeSetInstr(vm.CompilerEnv, code)
-			for !atomic.CompareAndSwapUint32(&globalEnvMutex, 0, 1) {
-			}
 
-			var env = vm.CompilerEnv.GlobalEnv[selfVm.EnvId]
+			var env = selfVm.Env
 			var found bool
 
 			for {
-				_, found = env.Frame[symId]
+				_, found = env.Frame.Load(symId)
 				if found {
 					break
 				}
 				if !env.HasParent {
 					break
 				}
-				env = vm.CompilerEnv.GlobalEnv[env.Parent]
+				env = env.Parent
 			}
 
 			if !found {
-				atomic.StoreUint32(&globalEnvMutex, 0)
 				vm.ResultErr = errors.New("symbol not found")
 				goto ESCAPE
 			}
 
-			env.Frame[symId] = selfVm.Stack.Peek()
-			atomic.StoreUint32(&globalEnvMutex, 0)
+			env.Frame.Store(symId, selfVm.Stack.Peek())
 			selfVm.Pc++
 		//case "new-env":
 		case compile.OPCODE_NEW_ENV:
-			for !atomic.CompareAndSwapUint32(&globalEnvMutex, 0, 1) {
-			}
-			envId := uint64(len(vm.CompilerEnv.GlobalEnv))
 			newEnv := compile.RuntimeEnv{
-				SelfIndex: envId,
-				Frame:     make(map[uint64]compile.SExpression),
-				Parent:    selfVm.EnvId,
+				Frame:     &sync.Map{},
+				Parent:    selfVm.Env,
 				HasParent: true,
 			}
-			vm.CompilerEnv.GlobalEnv = append(vm.CompilerEnv.GlobalEnv, newEnv)
-			atomic.StoreUint32(&globalEnvMutex, 0)
 
-			selfVm.Stack.Push(newEnv)
+			selfVm.Stack.Push(&newEnv)
 			selfVm.Pc++
 		//case "create-lambda":
 		case compile.OPCODE_CREATE_CLOSURE:
@@ -349,7 +335,16 @@ func VMRun(vm *Closure) compile.SExpression {
 				newVm.TemporaryArgs = append(newVm.TemporaryArgs, sym)
 			}
 
-			newVm.EnvId = selfVm.Stack.Pop().(compile.RuntimeEnv).SelfIndex
+			v := selfVm.Stack.Pop()
+
+			env, ok := v.(*compile.RuntimeEnv)
+
+			if !ok {
+				vm.ResultErr = errors.New("not an environment")
+				goto ESCAPE
+			}
+
+			newVm.Env = env
 			newVm.Pc = 0
 			selfVm.Stack.Push(newVm)
 			selfVm.Pc++
@@ -362,11 +357,7 @@ func VMRun(vm *Closure) compile.SExpression {
 				goto ESCAPE
 			}
 
-			nextEnvId := closure.EnvId
-			for !atomic.CompareAndSwapUint32(&globalEnvMutex, 0, 1) {
-			}
-			newEnv := vm.CompilerEnv.GlobalEnv[nextEnvId]
-			atomic.StoreUint32(&globalEnvMutex, 0)
+			nextEnv := closure.Env
 
 			argsSize := compile.DeserializeCallInstr(vm.CompilerEnv, code)
 
@@ -377,10 +368,10 @@ func VMRun(vm *Closure) compile.SExpression {
 
 			for _, sym := range closure.TemporaryArgs {
 				val := selfVm.Stack.Pop()
-				newEnv.Frame[uint64(sym)] = val
+				closure.Env.Frame.Store(uint64(sym), val)
 			}
 
-			closure.EnvId = nextEnvId
+			closure.Env = nextEnv
 			closure.ReturnCont = selfVm
 			clonedClosure := closure.Clone()
 			selfVm = &clonedClosure
@@ -1152,20 +1143,16 @@ func VMRun(vm *Closure) compile.SExpression {
 				goto ESCAPE
 			}
 
-			nextEnvId := closure.EnvId
-			for !atomic.CompareAndSwapUint32(&globalEnvMutex, 0, 1) {
-			}
+			nextEnv := closure.Env
 
 			selfVmRestore := selfVm.Clone()
 
-			closure.EnvId = nextEnvId
+			closure.Env = nextEnv
 
 			baseClosure := NewVM(vm.CompilerEnv)
 			clonedClosure := closure.Clone()
-			clonedClosure.EnvId = nextEnvId
+			clonedClosure.Env = nextEnv
 			clonedClosure.ReturnCont = baseClosure
-
-			atomic.StoreUint32(&globalEnvMutex, 0)
 
 			_, err := vm.CompilerEnv.RemoteJointVariable.Transaction(func(stm concurrency.STM) error {
 				baseClosure.Stack.Push(compile.NewNativeValue(stm))
@@ -1205,7 +1192,6 @@ ESCAPE:
 			}
 			selfVm = selfVm.ReturnCont
 		}
-		atomic.StoreUint32(&globalEnvMutex, 0)
 	}
 	return vm.Result
 }
